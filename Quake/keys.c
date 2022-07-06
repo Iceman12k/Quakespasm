@@ -45,6 +45,14 @@ qboolean	consolekeys[MAX_KEYS];	// if true, can't be rebound while in console
 qboolean	menubound[MAX_KEYS];	// if true, can't be rebound while in menu
 qboolean	keydown[MAX_KEYS];
 
+qboolean	Cmd_Exists2(const char* cmd_name); // woods #ezsay
+
+void Sound_Toggle_Mute_f (void); // woods #usermute
+void SCR_Mute_Switch (void); // woods #usermute
+void Con_Copy_f (void); // woods #concopy
+
+void VID_Minimize (void); // woods for mac command-tab
+
 typedef struct
 {
 	const char	*name;
@@ -62,6 +70,7 @@ keyname_t keynames[] =
 	{"DOWNARROW", K_DOWNARROW},
 	{"LEFTARROW", K_LEFTARROW},
 	{"RIGHTARROW", K_RIGHTARROW},
+	{"CAPSLOCK", K_CAPSLOCK}, // woods #capslock
 
 	{"ALT", K_ALT},
 	{"CTRL", K_CTRL},
@@ -214,7 +223,7 @@ int Key_NativeToQC(int code)
 	case K_END:				return 152;
 	case K_PAUSE:			return 153;
 	case K_KP_NUMLOCK:		return 154;
-//	case K_CAPSLOCK:		return 155;
+	case K_CAPSLOCK:		return 155; // woods enable #capslock
 //	case K_SCRLCK:			return 156;
 	case K_KP_INS:			return 157;
 	case K_KP_END:			return 158;
@@ -365,7 +374,7 @@ int Key_QCToNative(int code)
 	case 152:		return K_END;
 	case 153:		return K_PAUSE;
 	case 154:		return K_KP_NUMLOCK;
-//	case 155:		return K_CAPSLOCK;
+	case 155:		return K_CAPSLOCK; // woods #capslock
 //	case 156:		return K_SCRLCK;
 	case 157:		return K_KP_INS;
 	case 158:		return K_KP_END;
@@ -503,6 +512,18 @@ int Key_QCToNative(int code)
 ==============================================================================
 */
 
+qboolean CheckForCommand(void)  // woods added for don't have to type "say " every time you wanna say something #ezsay (joequake)
+{
+	char* s, command[256];
+
+	Q_strncpy(command, key_lines[edit_line] + 1, sizeof(command));
+	for (s = command; *s > ' '; s++)
+		;
+	*s = 0;
+
+	return (Cvar_FindVar(command) || Cmd_Exists2(command) || Cmd_AliasExists(command));
+}
+
 static void PasteToConsole (void)
 {
 	char *cbd, *p, *workline;
@@ -549,6 +570,57 @@ static void PasteToConsole (void)
 	Z_Free(cbd);
 }
 
+void Char_Console2(int key) // woods #ezsay add leading space for mode 2
+{
+	char* workline = key_lines[edit_line];
+	int max;
+
+	if (cl_say.value && (cls.state == ca_connected && cl.gametype == GAME_DEATHMATCH))
+		max = MAX_CHAT_SIZE;
+	else
+		max = MAXCMDLINE;
+	if (key_linepos < max) // woods limit chat to 45 server limit  #chatlimit
+	{
+		qboolean endpos = !workline[key_linepos];
+
+		
+		{
+			workline += key_linepos;
+			*workline = key;
+			// null terminate if at the end
+			if (endpos)
+				workline[1] = 0;
+		}
+		key_linepos++;
+	}
+}
+
+void Word_Delete (void) // woods from ezquake
+{
+	size_t len = 0;
+
+	while (key_linepos > 1 && key_lines[edit_line][key_linepos - 1] == ' ')
+	{
+		key_linepos--;
+		len++;
+	}
+
+	while (key_linepos > 1 && key_lines[edit_line][key_linepos - 1] != ' ')
+	{
+		key_linepos--;
+		len++;
+	}
+
+	// remove spaces after this word leaving only last one
+	while (key_linepos < strlen(key_lines[edit_line]) && key_lines[edit_line][key_linepos - 1] == ' ' && key_lines[edit_line][key_linepos - 2] == ' ')
+	{
+		key_linepos--;
+		len++;
+	}
+
+	strcpy(key_lines[edit_line] + key_linepos, key_lines[edit_line] + key_linepos + len);
+}
+
 /*
 ====================
 Key_Console -- johnfitz -- heavy revision
@@ -569,6 +641,13 @@ void Key_Console (int key)
 	switch (key)
 	{
 	case K_ENTER:
+		if (cls.state == ca_connected && !CheckForCommand() && cl_say.value) // woods don't have to type "say " every time you wanna say something #ezsay (joequake)
+		{
+			if (keydown[K_CTRL])
+				Cbuf_AddText("say_team ");
+			else
+				Cbuf_AddText("say ");
+		}
 	case K_KP_ENTER:
 		key_tabpartial[0] = 0;
 		Cbuf_AddText (workline + 1);	// skip the prompt
@@ -586,6 +665,8 @@ void Key_Console (int key)
 		key_linepos = 1;
 		if (cls.state == ca_disconnected)
 			SCR_UpdateScreen (); // force an update, because the command may take some time
+		if (cl_say.value == 2) // woods #ezsay add leading space for mode 2
+			Char_Console2(32);
 		return;
 
 	case K_TAB:
@@ -605,6 +686,13 @@ void Key_Console (int key)
 			else	*workline = 0;
 			key_linepos--;
 		}
+#if defined(PLATFORM_OSX) || defined(PLATFORM_MAC)
+		if (keydown[K_COMMAND]) // woods from ezquake
+			Word_Delete();
+		return;
+#endif
+		if (keydown[K_CTRL]) // woods from ezquake
+			Word_Delete();
 		return;
 
 	case K_DEL:
@@ -670,6 +758,13 @@ void Key_Console (int key)
 			key_linepos--;
 			key_blinktime = realtime;
 		}
+#if defined(PLATFORM_OSX) || defined(PLATFORM_MAC)
+		if (keydown[K_COMMAND])
+			key_linepos = 1;
+		return;
+#endif
+		if (keydown[K_CTRL])
+			key_linepos = 1;
 		return;
 
 	case K_RIGHTARROW:
@@ -689,6 +784,13 @@ void Key_Console (int key)
 			key_linepos++;
 			key_blinktime = realtime;
 		}
+#if defined(PLATFORM_OSX) || defined(PLATFORM_MAC)
+		if (keydown[K_COMMAND])
+			key_linepos = strlen(workline);
+		return;
+#endif
+		if (keydown[K_CTRL])
+			key_linepos = strlen(workline);
 		return;
 
 	case K_UPARROW:
@@ -743,6 +845,22 @@ void Key_Console (int key)
 		else	key_insert ^= 1;
 		return;
 
+	case 'U':
+	case 'u':
+#if defined(PLATFORM_OSX) || defined(PLATFORM_MAC)
+		if (keydown[K_COMMAND]) {
+			key_lines[edit_line][1] = 0;	// woods clear all line typing (Qrack)
+			key_linepos = 1;
+			return;
+		}
+#endif
+		if (keydown[K_CTRL]) {
+			key_lines[edit_line][1] = 0;	// woods clear all line typing (Qrack)
+			key_linepos = 1;
+			return;
+		}
+		break;
+
 	case 'v':
 	case 'V':
 #if defined(PLATFORM_OSX) || defined(PLATFORM_MAC)
@@ -759,7 +877,22 @@ void Key_Console (int key)
 
 	case 'c':
 	case 'C':
-		if (keydown[K_CTRL]) {		/* Ctrl+C: abort the line -- S.A */
+#if defined(PLATFORM_OSX) || defined(PLATFORM_MAC) // woods #concopy
+		if (key_dest == key_console)
+			if (keydown[K_COMMAND]) {	/* Cmd+c: condump and copy to clipboard (Mac-only) */
+				Con_Copy_f();
+				return;
+		}
+#endif
+		if (key_dest == key_console)
+			if (keydown[K_CTRL]) {		/* Ctrl+c: condump and copy to clipboard */
+			Con_Copy_f();
+			return;
+		}
+		break;
+	case 'd':
+	case 'D':
+		if (keydown[K_CTRL]) {		/* Ctrl+d: abort the line -- S.A */ // woods switched to D, from C #concopy
 			Con_Printf ("%s\n", workline);
 			workline[0] = ']';
 			workline[1] = 0;
@@ -775,8 +908,13 @@ void Char_Console (int key)
 {
 	size_t		len;
 	char *workline = key_lines[edit_line];
+	int max;
 
-	if (key_linepos < MAXCMDLINE-1)
+	if (cl_say.value && (cls.state == ca_connected && cl.gametype == GAME_DEATHMATCH))
+		max = MAX_CHAT_SIZE;
+	else
+		max = MAXCMDLINE;
+	if (key_linepos < max) // woods limit chat to 45 server limit  #chatlimit
 	{
 		qboolean endpos = !workline[key_linepos];
 
@@ -807,7 +945,7 @@ void Char_Console (int key)
 //============================================================================
 
 qboolean	chat_team = false;
-static char	chat_buffer[MAXCMDLINE];
+static char	chat_buffer[MAX_CHAT_SIZE]; // woods limit chat to 45 server limit  #chatlimit
 static int	chat_bufferlen = 0;
 
 const char *Key_GetChatBuffer (void)
@@ -837,7 +975,7 @@ void Key_Message (int key)
 			Cbuf_AddText ("say_team \"");
 		else
 			Cbuf_AddText ("say \"");
-		Cbuf_AddText(chat_buffer);
+		Cbuf_AddText(q_strlwr(chat_buffer)); // woods #capslock (disable caps in messagemode)
 		Cbuf_AddText("\"\n");
 
 		Key_EndChat ();
@@ -1162,6 +1300,49 @@ void History_Shutdown (void)
 	}
 }
 
+void Print_History(void) // woods #shortcuts #history
+{
+	FILE* fp;
+	int c;
+
+	History_Shutdown();
+	History_Init();
+
+	fp = fopen(va("%s/%s", host_parms->userdir, HISTORY_FILE_NAME), "rt");
+
+	if (fp == NULL) 
+	{
+		Con_Printf("Error in opening file"); // history init will print, but error check anyway.
+		return;
+	} 
+
+	int ch = fgetc(fp); // is there a history?
+
+	if (ch == EOF)
+	{ 
+		Con_Printf("no current console history\n");
+		return;
+	}
+	else
+		ungetc(ch, fp);
+
+	Con_Printf("\n");
+	Con_Printf("^mconsole history:\n");
+	Con_Printf("\n");
+
+	do 
+	{
+		c = fgetc(fp);
+		if (feof(fp))
+			break;
+		Con_Printf("%c", c);
+	} 
+	while (1);
+	fclose(fp);
+
+	Con_Printf("\n"); // bottom padding
+}
+
 /*
 ===================
 Key_Init
@@ -1220,6 +1401,7 @@ void Key_Init (void)
 #endif
 	consolekeys[K_MWHEELUP] = true;
 	consolekeys[K_MWHEELDOWN] = true;
+	consolekeys[K_CAPSLOCK] = true; // woods #capslock
 
 //
 // initialize menubound[]
@@ -1358,6 +1540,119 @@ void Key_Event (int key, qboolean down)
 		return;
 	}
 
+#if defined(PLATFORM_OSX) || defined(PLATFORM_MAC) // woods for mac command-tab to exit fullscreen
+	if (down && (key == K_TAB) && keydown[K_COMMAND])
+	{
+		VID_Minimize();
+		return;
+	}
+#endif
+
+#if defined(PLATFORM_OSX) || defined(PLATFORM_MAC) // woods #shortcuts #history, "command-y", not h, is mac standard for history
+	if (down && (key == 'y') && keydown[K_COMMAND])
+	{
+		Print_History();
+		return;
+	}
+#endif
+
+	if (down && (key == 'h') && keydown[K_CTRL]) // woods #shortcuts #history
+	{
+		Print_History();
+		return;
+	}
+
+#if defined(PLATFORM_OSX) || defined(PLATFORM_MAC) // woods #shortcuts
+	if (down && (key == 'q') && keydown[K_COMMAND])
+	{
+		Host_Quit_f();
+		return;
+	}
+#endif
+
+	if (down && (key == 'q') && keydown[K_CTRL]) // woods #shortcuts
+	{
+		Host_Quit_f();
+		return;
+	}
+
+	if (down && (key == 'w') && keydown[K_CTRL]) // woods #shortcuts
+	{
+		Host_Quit_f();
+		return;
+	}
+
+#if defined(PLATFORM_OSX) || defined(PLATFORM_MAC) // woods #shortcuts
+	if (!(scr_conscale.value > 11) || !(scr_sbarscale.value > 7)) // max clamp
+	if (down && (key == K_MWHEELUP) && keydown[K_COMMAND])
+	{
+		Cmd_ExecuteString("inc scr_conscale 1\n", src_command);
+		Cmd_ExecuteString("inc scr_sbarscale 1\n", src_command);
+		Cmd_ExecuteString("inc scr_crosshairscale 1\n", src_command);
+		return;
+	}
+#endif
+	if (!(scr_conscale.value > 11) || !(scr_sbarscale.value > 7)) // max clamp
+	if (down && (key == K_MWHEELUP) && keydown[K_CTRL]) // woods #shortcuts
+	{
+		Cmd_ExecuteString("inc scr_conscale 1\n", src_command);
+		Cmd_ExecuteString("inc scr_sbarscale 1\n", src_command);
+		Cmd_ExecuteString("inc scr_crosshairscale 1\n", src_command);
+		return;
+	}
+
+#if defined(PLATFORM_OSX) || defined(PLATFORM_MAC) // woods #shortcuts
+		if (!(scr_conscale.value < -1) || !(scr_sbarscale.value < -1)) // min clamp
+	if (down && (key == K_MWHEELDOWN) && keydown[K_COMMAND])
+	{
+		Cmd_ExecuteString("inc scr_conscale -1\n", src_command);
+		Cmd_ExecuteString("inc scr_sbarscale -1\n", src_command);
+		Cmd_ExecuteString("inc scr_crosshairscale -1\n", src_command);
+		return;
+}
+#endif
+
+	if (!(scr_conscale.value < -1) || !(scr_sbarscale.value < -1)) // min clamp
+	if (down && (key == K_MWHEELDOWN) && keydown[K_CTRL]) // woods #shortcuts
+	{
+		Cmd_ExecuteString("inc scr_conscale -1\n", src_command);
+		Cmd_ExecuteString("inc scr_sbarscale -1\n", src_command);
+		Cmd_ExecuteString("inc scr_crosshairscale -1\n", src_command);
+		return;
+	}
+
+	if (sfxvolume.value < 1) // min clamp
+		if (down && (key == K_MWHEELUP) && keydown[K_ALT]) // woods #shortcuts
+		{
+			Cmd_ExecuteString("inc volume .02\n", src_command);
+			if (!strcmp(mute, "y"))
+				Sound_Toggle_Mute_f();			
+			return;
+		}
+
+	if (sfxvolume.value > 0)// min clamp
+		if (down && (key == K_MWHEELDOWN) && keydown[K_ALT]) // woods #shortcuts
+		{
+			Cmd_ExecuteString("inc volume -.02\n", src_command);
+			if (!strcmp(mute, "y"))
+				Sound_Toggle_Mute_f();			
+			return;
+		}
+
+#if defined(PLATFORM_OSX) || defined(PLATFORM_MAC) // woods #shortcuts
+	if (down && (key == 'm') && keydown[K_COMMAND])
+	{ 
+		Sound_Toggle_Mute_f();
+		return;
+	}
+#endif
+
+	if (down && (key == 'm') && keydown[K_CTRL]) // woods #usermute
+	{
+		Sound_Toggle_Mute_f();
+		return;
+	}
+
 // handle autorepeats and stray key up events
 	if (down)
 	{
@@ -1418,6 +1713,122 @@ void Key_Event (int key, qboolean down)
 		return;
 	}
 
+	if (down && (key == K_SPACE)) // woods
+	{
+		if (cls.demoplayback && cls.demonum == -1 && !cls.timedemo)
+		{
+			if (cl_demospeed.value > 0)
+			{
+				cls.demospeed_state = cl_demospeed.value;
+				Cvar_SetValue("cl_demospeed", 0);
+			}
+			else
+			{
+				if (cls.demospeed_state > 0)
+					Cvar_SetValue("cl_demospeed", cls.demospeed_state);
+				else
+					Cvar_SetValue("cl_demospeed", 1);
+			}
+
+			return;
+		}
+	}
+
+	// woods #demorewind (Baker Fitzquake Mark V) -- PGUP and PGDN rewind and fast-forward demos
+	if (cls.demoplayback && cls.demonum == -1 && !cls.timedemo /*&& !cls.capturedemo*/) // woods #demorewind (Baker Fitzquake Mark V)
+		if (key == K_PGUP || key == K_PGDN)
+		{ 
+			if (key_dest == key_game && down /* && cls.demospeed == 0 && cls.demorewind == false*/)
+			{
+				// During normal demoplayback, PGUP/PGDN will rewind and fast forward (if key_dest is game)
+				if (key == K_PGUP)
+				{
+					cls.demospeed = 5;
+					cls.demorewind = false;
+				}
+				else if (key == K_PGDN)
+				{
+					cls.demospeed = 5;
+					cls.demorewind = true;
+				}
+				return; // If something is bound to it, do not process it.
+			}
+			else //if (!down && (cls.demospeed != 0 || cls.demorewind != 0))
+			{
+				// During normal demoplayback, releasing PGUP/PGDN resets the speed
+				// We need to check even if not key_game in case something silly happened (to be safe)
+				cls.demospeed = 0;
+				cls.demorewind = false;
+
+				if (key_dest == key_game)
+					return; // Otherwise carry on ...
+			}
+		}
+	// woods #demorewind (Baker Fitzquake Mark V) -- scrollwheel rewind and fast-forward demos
+	if (cls.demoplayback && cls.demonum == -1 && !cls.timedemo) // woods #demorewind (Baker Fitzquake Mark V)
+		if (key == K_MWHEELUP || key == K_MWHEELDOWN)
+			if (key_dest == key_game && down)
+			{
+				if (key == K_MWHEELUP)
+				{
+					if (cls.demospeed == 5)
+					{
+						cls.demospeed = 0;
+						cls.demorewind = false;
+					}
+					else
+					{
+						cls.demospeed = 5;
+						cls.demorewind = false;
+					}
+				}
+				else if (key == K_MWHEELDOWN)
+				{
+					if (cls.demospeed == 5)
+					{
+						cls.demospeed = 0;
+						cls.demorewind = false;
+					}
+					else
+					{
+						cls.demospeed = 5;
+						cls.demorewind = true;
+					}
+				}
+				return;
+			}
+
+	// woods #demorewind (Baker Fitzquake Mark V) -- LEFT and RIGHT ARROW skip 5 seconds forward of back + SUPER FAST
+	if (cls.demoplayback && cls.demonum == -1 && !cls.timedemo) // woods #demorewind (Baker Fitzquake Mark V)
+		if (key == K_RIGHTARROW || key == K_LEFTARROW)
+		{
+			if (key_dest == key_game && down /* && cls.demospeed == 0 && cls.demorewind == false*/)
+			{
+				// During normal demoplayback, PGUP/PGDN will rewind and fast forward (if key_dest is game)
+				if (key == K_RIGHTARROW)
+				{
+					cls.demospeed = 75;
+					cls.demorewind = false;
+				}
+				else if (key == K_LEFTARROW)
+				{
+					cls.demospeed = 75;
+					cls.demorewind = true;
+				}
+				return; // If something is bound to it, do not process it.
+			}
+			else //if (!down && (cls.demospeed != 0 || cls.demorewind != 0))
+			{
+				// During normal demoplayback, releasing PGUP/PGDN resets the speed
+				// We need to check even if not key_game in case something silly happened (to be safe)
+				cls.demospeed = 0;
+				cls.demorewind = false;
+
+				if (key_dest == key_game)
+					return; // Otherwise carry on ...
+			}
+		}
+
 	//Spike -- give menuqc a chance to handle (and swallow) key events.
 	if ((key_dest == key_menu || !down) && Menu_HandleKeyEvent(down, key, 0))
 		return;
@@ -1442,13 +1853,13 @@ void Key_Event (int key, qboolean down)
 		}
 		return;
 	}
-
+/* woods disabled this so I can see scores in demos
 // during demo playback, most keys bring up the main menu
 	if (cls.demoplayback && down && consolekeys[key] && key_dest == key_game && key != K_TAB)
 	{
 		M_ToggleMenu (1);
 		return;
-	}
+	}*/
 
 // if not a consolekey, send to the interpreter no matter what mode is
 	if ((key_dest == key_menu && menubound[key]) ||

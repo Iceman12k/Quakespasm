@@ -27,6 +27,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 extern cvar_t r_drawflat, gl_overbright_models, gl_fullbrights, r_lerpmodels, r_lerpmove; //johnfitz
 extern cvar_t scr_fov, cl_gun_fovscale;
 
+cvar_t	gl_lightning_alpha = {"gl_lightning_alpha","1"}; // woods #lightalpha
+
 //up to 16 color translated skins
 gltexture_t *playertextures[MAX_SCOREBOARD]; //johnfitz -- changed to an array of pointers
 
@@ -980,7 +982,7 @@ void R_SetupAliasLighting (entity_t	*e)
 					VectorMA (lightcolor, add, cl_dlights[i].color, lightcolor);
 			}
 		}
-
+		/* woods disable below, add min light to all
 		// minimum light value on gun (24)
 		if (e == &cl.viewent)
 		{
@@ -1003,8 +1005,69 @@ void R_SetupAliasLighting (entity_t	*e)
 				lightcolor[1] += add / 3.0f;
 				lightcolor[2] += add / 3.0f;
 			}
+		}*/
+		// woods added minlight for all models to avoid colored lighting blinding
+		if (e->model)
+		{
+			add = 3000.0f - (lightcolor[0] + lightcolor[1] + lightcolor[2]);
+			if (add > 0.0f)
+			{
+				lightcolor[0] += add / 3.0f;
+				lightcolor[1] += add / 3.0f;
+				lightcolor[2] += add / 3.0f;
+			}
 		}
 	}
+	
+	// begin woods for orange hue damage taken #damage
+
+	if (cl.time <= cl.faceanimtime && cl_damagehue.value)
+		if (e == &cl.viewent)
+		{
+			{
+				lightcolor[0] = 169;
+				lightcolor[1] = 114;
+				lightcolor[2] = 64;
+			}
+		}
+
+	// end woods for red damage taken
+
+	// begin woods add hue to gun model with powerups
+
+	if (cl.gametype == GAME_DEATHMATCH)
+	{
+		if (cl.items & IT_QUAD)
+			if (e == &cl.viewent)
+			{
+				{
+					lightcolor[0] = 50;
+					lightcolor[1] = 50;
+					lightcolor[2] = 121;
+				}
+			}
+
+		if (cl.items & IT_INVULNERABILITY)
+			if (e == &cl.viewent)
+			{
+				{
+					lightcolor[0] = 131;
+					lightcolor[1] = 73;
+					lightcolor[2] = 73;
+				}
+			}
+
+		if ((cl.items & (IT_QUAD | IT_INVULNERABILITY)) == (IT_QUAD | IT_INVULNERABILITY))
+			if (e == &cl.viewent)
+			{
+				{
+					lightcolor[0] = 211;
+					lightcolor[1] = 113;
+					lightcolor[2] = 194;
+				}
+			}
+	}
+	// end woods add hue to gun model with powerups
 
 	// clamp lighting so it doesn't overbright as much (96)
 	if (overbright)
@@ -1057,6 +1120,7 @@ void R_DrawAliasModel (entity_t *e)
 	qboolean	alphatest = !!(e->model->flags & MF_HOLEY);
 	int surf;
 	float		fovscale = 1.0f;
+	qmodel_t* clmodel = currententity->model;   // woods lightning alpha #lightalpha & doubleeyes 
 
 	//
 	// setup pose/lerp data -- do it first so we don't miss updates due to culling
@@ -1096,9 +1160,38 @@ void R_DrawAliasModel (entity_t *e)
 		fovscale = tan(scr_fov.value * (0.5f * M_PI / 180.f));
 
 	R_RotateForEntity (lerpdata.origin, lerpdata.angles, e->netstate.scale);
-	glTranslatef (paliashdr->scale_origin[0], paliashdr->scale_origin[1] * fovscale, paliashdr->scale_origin[2] * fovscale);
-	glScalef (paliashdr->scale[0], paliashdr->scale[1] * fovscale, paliashdr->scale[2] * fovscale);
 
+	// woods added doubleeyes (MH)
+
+	if (!strcmp(clmodel->name, "progs/eyes.mdl") /*&& gl_doubleeyes.value*/)
+	{	// gl_doubleeyes fix by mh Tue Sep 25, 2012 5:00 pm 
+	// scaling factor - gl_doubleeyes 0 = unscaled, gl_doubleeyes 1 = 2x
+		float sc = 1 + 1.0f;
+
+		// offsets for eyes.mdl derived by taking the scaled midpoint of all verts in the mdl
+		// you may wish to calculate these at load time rather than hard-code them in the engine
+		float ofs[3] = { -0.13172054 * 1, -0.078105450 * 1, 25.347622 * 1 };
+
+		// matrix for scaling and positioning the eyes
+		float eyematrix[16] = { sc, 0, 0, 0, 0, sc, 0, 0, 0, 0, sc, 0, -ofs[0], -ofs[1], -ofs[2], 1 };
+
+		// and fix things up
+		glMultMatrixf(eyematrix);
+
+		glTranslatef(paliashdr->scale_origin[0], paliashdr->scale_origin[1] * fovscale, paliashdr->scale_origin[2] * fovscale);
+		glScalef(paliashdr->scale[0], paliashdr->scale[1] * fovscale, paliashdr->scale[2] * fovscale);
+	}
+	else
+	{
+		glTranslatef(paliashdr->scale_origin[0], paliashdr->scale_origin[1] * fovscale, paliashdr->scale_origin[2] * fovscale);
+		glScalef(paliashdr->scale[0], paliashdr->scale[1] * fovscale, paliashdr->scale[2] * fovscale);
+	}
+
+	// end double eyes / woods
+
+	if (!strcmp(clmodel->name, "progs/bolt2.mdl"))   // woods for lighting alpha #lightalpha
+		currententity->alpha = ENTALPHA_ENCODE(gl_lightning_alpha.value); 
+	
 	//
 	// random stuff
 	//
@@ -1112,7 +1205,7 @@ void R_DrawAliasModel (entity_t *e)
 	//
 	// set up for alpha blending
 	//
-	if (r_drawflat_cheatsafe || r_lightmap_cheatsafe) //no alpha in drawflat or lightmap mode
+	if (r_drawflat_cheatsafe/* || r_lightmap_cheatsafe*/) //no alpha in drawflat or lightmap mode // woods #textureless to keep models
 		entalpha = 1;
 	else
 		entalpha = ENTALPHA_DECODE(e->alpha);
@@ -1199,14 +1292,14 @@ void R_DrawAliasModel (entity_t *e)
 				glDisable(GL_BLEND);
 			}
 		}
-		else if (r_lightmap_cheatsafe)
+/*		else if (r_lightmap_cheatsafe) // woods #textureless
 		{
 			glDisable (GL_TEXTURE_2D);
 			shading = false;
 			glColor3f(1,1,1);
 			GL_DrawAliasFrame (paliashdr, lerpdata);
 			glEnable (GL_TEXTURE_2D);
-		}
+		}*/
 	// call fast path if possible. if the shader compliation failed for some reason,
 	// r_alias_program will be 0.
 		else if (glsl->program != 0 && (paliashdr->numbones <= glsl->maxbones||!lerpdata.bonestate))
@@ -1382,6 +1475,7 @@ void GL_DrawAliasShadow (entity_t *e)
 	float		lheight;
 	aliashdr_t	*paliashdr;
 	lerpdata_t	lerpdata;
+	float shade; // woods (R00k) : fade light based on ambientlight
 
 	if (R_CullModelForEntity(e))
 		return;
@@ -1396,6 +1490,7 @@ void GL_DrawAliasShadow (entity_t *e)
 	R_SetupAliasFrame (paliashdr, e, &lerpdata);
 	R_SetupEntityTransform (e, &lerpdata);
 	R_LightPoint (e->origin);
+	shade = (((lightcolor[0] + lightcolor[1] + lightcolor[2]) / 3) / 128); // woods (R00k) : fade light based on ambientlight
 	lheight = currententity->origin[2] - lightspot[2];
 
 // set up matrix
@@ -1416,7 +1511,7 @@ void GL_DrawAliasShadow (entity_t *e)
 	GL_DisableMultitexture ();
 	glDisable (GL_TEXTURE_2D);
 	shading = false;
-	glColor4f(0,0,0,entalpha * 0.5);
+	glColor4f(0,0,0,entalpha * shade * r_shadows.value); // woods (R00k) : fade light based on ambientlight
 	GL_DrawAliasFrame (paliashdr, lerpdata);
 	glEnable (GL_TEXTURE_2D);
 	glDisable (GL_BLEND);

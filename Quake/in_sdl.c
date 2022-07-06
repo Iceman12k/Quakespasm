@@ -32,10 +32,19 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "SDL.h"
 #endif
 
+char	normalname[20]; // woods #smartafk
+char	normalname2[32]; // woods #smartafk
+
 static qboolean	textmode;
 extern qboolean	bind_grab;	//from the menu code, so that we regrab the mouse in order to pass inputs through
 
 static cvar_t in_debugkeys = {"in_debugkeys", "0", CVAR_NONE};
+
+void Sound_Toggle_Mute_On_f(void); // woods #mute -- adapted from Fitzquake Mark V
+void Sound_Toggle_Mute_Off_f(void); // woods #mute -- adapted from Fitzquake Mark V
+
+void Host_Name_Backup_f(void); // woods #smartafk
+void Host_Name_Load_Backup_f(void); // woods #smartafk
 
 #ifdef __APPLE__
 /* Mouse acceleration needs to be disabled on OS X */
@@ -943,6 +952,7 @@ static inline int IN_SDL_KeysymToQuakeKey(SDLKey sym)
 	case SDLK_SPACE: return K_SPACE;
 
 	case SDLK_BACKSPACE: return K_BACKSPACE;
+	case SDLK_CAPSLOCK: return K_CAPSLOCK; // woods #capslock
 	case SDLK_UP: return K_UPARROW;
 	case SDLK_DOWN: return K_DOWNARROW;
 	case SDLK_LEFT: return K_LEFTARROW;
@@ -1069,6 +1079,7 @@ static inline int IN_SDL2_ScancodeToQuakeKey(SDL_Scancode scancode)
 	case SDL_SCANCODE_NONUSBACKSLASH: return '\\';
 
 	case SDL_SCANCODE_BACKSPACE: return K_BACKSPACE;
+	case SDL_SCANCODE_CAPSLOCK: return K_CAPSLOCK; // woods #capslock
 	case SDL_SCANCODE_UP: return K_UPARROW;
 	case SDL_SCANCODE_DOWN: return K_DOWNARROW;
 	case SDL_SCANCODE_LEFT: return K_LEFTARROW;
@@ -1168,9 +1179,45 @@ void IN_SendKeyEvents (void)
 #if defined(USE_SDL2)
 		case SDL_WINDOWEVENT:
 			if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED)
-				S_UnblockSound();
+			{
+				//S_UnblockSound();
+				if (!strcmp(mute, "y")) // woods #usermute
+					Sound_Toggle_Mute_On_f(); // woods #mute -- adapted from Fitzquake Mark V
+				else
+					Sound_Toggle_Mute_Off_f();
+			
+				if (cl_afk.value) // woods #smartafk
+				{
+					if (strlen(afk_name) > 1) // intiate only if a AFK event has occured
+						Cvar_Set("name", afk_name);
+
+					// be polite during matches (only) and let teammates know you have alt-tabbed
+					if (cl.teamgame && !strcmp(cl.observer, "n") && (cl.seconds > 0) && (cl.minutes > 0) && (cl.minutes < 30) && (cl.gametype == GAME_DEATHMATCH) && (cls.state = ca_connected))
+						Cmd_ExecuteString("say_team \"back from alt-tab\"", src_command);
+				}
+			}
+
 			else if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
-				S_BlockSound();
+			{
+				//S_BlockSound();
+				Sound_Toggle_Mute_On_f(); // woods #mute -- adapted from Fitzquake Mark V
+
+				if (cl_afk.value) // woods #smartafk
+				{
+					if (!strstr(cl_name.string, "AFK")) // initiate AFK-in-name if AFK not already in the name
+					{
+						Q_strcpy(afk_name, cl_name.string); // store name to memory
+						sprintf(normalname, "%.11s", cl_name.string); // cut name
+						sprintf(normalname2, "%s%s", normalname, " ÁÆË"); // add AFK to name
+						Cvar_Set("name", normalname2); // set name with AFK
+						Host_Name_Backup_f(); // back up the full name incase of crash
+					}
+
+					// be polite during matches (only) and let teammates know you have alt-tabbed
+					if (cl.teamgame && !strcmp(cl.observer, "n") && (cl.seconds > 0) && (cl.minutes > 0) && (cl.minutes < 30) && (cl.gametype == GAME_DEATHMATCH) && (cls.state = ca_connected)) // woods #smartafk
+						Cmd_ExecuteString("say_team alt-tabbed", src_command);
+				}
+			}
 			else if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
 			{
 				vid.width = event.window.data1;

@@ -47,10 +47,10 @@ gltexture_t	*skybox_textures[6];
 gltexture_t	*solidskytexture, *alphaskytexture;
 
 extern cvar_t gl_farclip;
-cvar_t r_fastsky = {"r_fastsky", "0", CVAR_NONE};
+cvar_t r_fastsky = {"r_fastsky", "0", CVAR_ARCHIVE};
 cvar_t r_sky_quality = {"r_sky_quality", "12", CVAR_NONE};
 cvar_t r_skyalpha = {"r_skyalpha", "1", CVAR_NONE};
-cvar_t r_skyfog = {"r_skyfog","0.5",CVAR_NONE};
+cvar_t r_skyfog = {"r_skyfog","0.5",CVAR_ARCHIVE};
 
 int		skytexorder[6] = {0,2,1,3,4,5}; //for skybox
 
@@ -677,12 +677,20 @@ void Sky_ProcessPoly (glpoly_t	*p)
 	rs_brushpasses++;
 
 	//update sky bounds
-	if (!r_fastsky.value)
+	if (r_fastsky.value == 0) // woods #fastsky2 | OG behavior --> true: r_fastsky does not work so if r_fastsky 0 this run, if r_fastsky 1 this does not run
 	{
 		for (i=0 ; i<p->numverts ; i++)
 			VectorSubtract (p->verts[i], r_origin, verts[i]);
 		Sky_ClipPoly (p->numverts, verts[0], 0);
 	}
+
+	if ((r_fastsky.value == 2) && (skybox_name[0])) // woods -- #fastsky2 | r_fastsky 2 gives skybox precedence over fastsky, but fallback if not skybox
+	{
+		for (i = 0; i < p->numverts; i++)
+			VectorSubtract(p->verts[i], r_origin, verts[i]);
+		Sky_ClipPoly(p->numverts, verts[0], 0);
+	}
+
 }
 
 /*
@@ -1139,7 +1147,7 @@ void Sky_DrawSky (void)
 	int i;
 
 	//in these special render modes, the sky faces are handled in the normal world/brush renderer
-	if (r_drawflat_cheatsafe || r_lightmap_cheatsafe)
+	if (r_drawflat_cheatsafe/*|| r_lightmap_cheatsafe*/) // woods #textureless to keep sky
 		return;
 
 	if (skyroom_drawn)
@@ -1197,7 +1205,7 @@ void Sky_DrawSky (void)
 	//
 	// render slow sky: cloud layers or skybox
 	//
-	if (!r_fastsky.value && !(Fog_GetDensity() > 0 && skyfog >= 1))
+	if ((r_fastsky.value != 1 && !(Fog_GetDensity() > 0 && skyfog >= 1)) && !(r_fastsky.value == 2 && !skybox_name[0])) // woods -- #fastsky2 | r_fastsky 2 gives skybox precedence over fastsky, but fallback if not skybox
 	{
 		glDepthFunc(GL_GEQUAL);
 		glDepthMask(0);

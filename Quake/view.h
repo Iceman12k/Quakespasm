@@ -36,5 +36,7 @@ float V_CalcRoll (vec3_t angles, vec3_t velocity);
 void V_RestoreAngles (void);
 //void V_UpdatePalette (void); //johnfitz
 
+void CShift_ParseWorldspawn (void); //infin -- woods tag
+
 #endif	/* _QUAKE_VIEW_H */
 

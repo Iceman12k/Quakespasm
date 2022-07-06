@@ -35,6 +35,16 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 	#endif
 #endif
 
+#if defined(SDL_FRAMEWORK) || defined(NO_SDL_CONFIG)
+#if defined(USE_SDL2)
+#include <SDL2/SDL.h>
+#else
+#include <SDL/SDL.h>
+#endif
+#else
+#include "SDL.h"
+#endif
+
 static char	*largv[MAX_NUM_ARGVS + 1];
 static char	argvdummy[] = " ";
 
@@ -159,6 +169,26 @@ void InsertLinkAfter (link_t *l, link_t *after)
 
 ============================================================================
 */
+
+// woods string reverse
+
+#define SWAP(T, a, b) \
+    do { T save = (a); (a) = (b); (b) = save; } while (0)
+
+char* Q_strrev(char* s)
+{
+	size_t len = strlen(s);
+
+	if (len > 1) {
+		char* a = s;
+		char* b = s + len - 1;
+
+		for (; a < b; ++a, --b)
+			SWAP(char, *a, *b);
+	}
+
+	return s;
+}
 
 int q_strcasecmp(const char * s1, const char * s2)
 {
@@ -3061,6 +3091,43 @@ static void COM_Dir_f(void)
 		COM_ListAllFiles(NULL, Cmd_Argv(i), COM_Dir_Result, 0, NULL);
 }
 
+#if defined(_WIN32) || defined(PLATFORM_OSX) || defined(PLATFORM_MAC)
+static void COM_Dir_Open_f(void) // woods #openfolder opens folder outside of game
+{
+	int c = Cmd_Argc();
+
+	if (c > 2 || c < 2)
+	{
+		Con_Printf("\n");
+		Con_Printf("^mopen^m <gamedir folder> or <id1 path>  ie: open id1, open id1/maps, open demos\n");
+		Con_Printf("\n");
+		return;
+	}
+	else
+	{
+		char	path[MAX_OSPATH];
+		char	folder[MAX_OSPATH];
+
+		if (strstr(Cmd_Argv(1), "id1"))
+			q_snprintf(path, sizeof(path), "file://%s/%s", com_basedir, Cmd_Argv(1));
+		else
+		{ 
+			q_strlcpy(folder, Cmd_Argv(1), sizeof(folder));
+			q_snprintf(path, sizeof(path), "file://%s/%s", com_gamedir, folder);
+		}
+
+		if (SDL_OpenURL(path) == -1)
+		{ 
+			Con_Printf("\n");
+			Con_Printf("no folder found\n");
+			Con_Printf("\n");
+		}
+		else
+			SDL_OpenURL(path);
+	}
+}
+#endif
+
 static qboolean COM_SameDirs(const char *dir1, const char *dir2)
 {
 #ifdef _WIN32
@@ -3105,6 +3172,10 @@ void COM_InitFilesystem (void) //johnfitz -- modified based on topaz's tutorial
 	Cmd_AddCommand ("flocate", COM_Dir_f);
 	Cmd_AddCommand ("game", COM_Game_f); //johnfitz
 	Cmd_AddCommand ("gamedir", COM_Game_f); //Spike -- alternative name for it, consistent with quakeworld and a few other engines
+#if defined(_WIN32) || defined(PLATFORM_OSX) || defined(PLATFORM_MAC)
+	Cmd_AddCommand ("open", COM_Dir_Open_f); // woods #openfolder
+#endif
+	Cmd_AddCommand ("cfg_save", Host_SaveConfiguration); // woods #cfgsave
 
 	i = COM_CheckParm ("-basedir");
 	if (i && i < com_argc-1)
@@ -3852,4 +3923,16 @@ size_t LOC_Format (const char *format, const char* (*getarg_fn) (int idx, void* 
 	out[written] = 0;
 
 	return written;
+}
+
+// woods #demopercent (Baker Fitzquake Mark V)
+
+int COM_Minutes(int seconds)
+{
+	return seconds / 60;
+}
+
+int COM_Seconds(int seconds)
+{
+	return seconds % 60;
 }

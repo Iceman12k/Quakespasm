@@ -47,7 +47,7 @@ qpic_t		*sb_face_quad;
 qpic_t		*sb_face_invuln;
 qpic_t		*sb_face_invis_invuln;
 
-qboolean	sb_showscores;
+// qboolean	sb_showscores; woods moved for broader access
 
 int		sb_lines;			// scan lines to draw
 
@@ -72,6 +72,7 @@ static int hudtype;
 void Sbar_MiniDeathmatchOverlay (void);
 void Sbar_DeathmatchOverlay (void);
 void M_DrawPic (int x, int y, qpic_t *pic);
+void Draw_SubPic_QW (int x, int y, qpic_t* pic, int ofsx, int ofsy, int w, int h); // woods #sbarstyles for qw hud
 
 qboolean Sbar_CSQCCommand(void)
 {
@@ -318,6 +319,22 @@ void Sbar_DrawPic (int x, int y, qpic_t *pic)
 
 /*
 =============
+Sbar_DrawSubPicAlpha -- // woods #sbarstyles
+=============
+*/
+void Sbar_DrawSubPicAlpha(int x, int y, qpic_t* pic, int ofsx, int ofsy, int w, int h, float alpha)
+{
+	glDisable(GL_ALPHA_TEST);
+	glEnable(GL_BLEND);
+	glColor4f(1, 1, 1, alpha);
+	Draw_SubPic_QW(x, y + 24, pic, ofsx, ofsy, w, h);
+	glColor4f(1, 1, 1, 1); // ericw -- changed from glColor3f to work around intel 855 bug with "r_oldwater 0" and "scr_sbaralpha 0"
+	glDisable(GL_BLEND);
+	glEnable(GL_ALPHA_TEST);
+}
+
+/*
+=============
 Sbar_DrawPicAlpha -- johnfitz
 =============
 */
@@ -375,7 +392,7 @@ void Sbar_DrawScrollString (int x, int y, int width, const char *str)
 
 	scale = CLAMP (1.0, scr_sbarscale.value, (float)glwidth / 320.0);
 	left = x * scale;
-	if (cl.gametype != GAME_DEATHMATCH)
+	//if (cl.gametype != GAME_DEATHMATCH) // woods sbar now middle default
 		left += (((float)glwidth - 320.0 * scale) / 2);
 
 	glEnable (GL_SCISSOR_TEST);
@@ -384,9 +401,9 @@ void Sbar_DrawScrollString (int x, int y, int width, const char *str)
 	len = strlen(str)*8 + 40;
 	ofs = ((int)(realtime*30))%len;
 	Sbar_DrawString (x - ofs, y, str);
-	Sbar_DrawCharacter (x - ofs + len - 32, y, '/');
-	Sbar_DrawCharacter (x - ofs + len - 24, y, '/');
-	Sbar_DrawCharacter (x - ofs + len - 16, y, '/');
+	//Sbar_DrawCharacter (x - ofs + len - 32, y, '/'); // woods
+	//Sbar_DrawCharacter (x - ofs + len - 24, y, '/'); // woods
+	//Sbar_DrawCharacter (x - ofs + len - 16, y, '/'); // woods
 	Sbar_DrawString (x - ofs + len, y, str);
 
 	glDisable (GL_SCISSOR_TEST);
@@ -461,11 +478,6 @@ void Sbar_DrawNum (int x, int y, int num, int digits, int color)
 	}
 }
 
-//=============================================================================
-
-int		fragsort[MAX_SCOREBOARD];
-int		scoreboardlines;
-
 /*
 ===============
 Sbar_SortFrags
@@ -500,6 +512,70 @@ void Sbar_SortFrags (void)
 	}
 }
 
+/*
+===============
+Sbar_SortFrags_Obs -- woods for vertical upwards sorting #observerhud
+===============
+*/
+void Sbar_SortFrags_Obs(void)
+{
+	int		i, j, k;
+
+// sort by frags
+	scoreboardlines = 0;
+	for (i = 0; i < cl.maxclients; i++)
+	{
+		if (cl.scores[i].name[0])
+		{
+			fragsort[scoreboardlines] = i;
+			scoreboardlines++;
+		}
+	}
+
+	for (i = 0; i < scoreboardlines; i++)
+	{
+		for (j = 0; j < scoreboardlines - 1 - i; j++)
+		{
+			if (cl.scores[fragsort[j]].frags > cl.scores[fragsort[j+1]].frags) // woods '>'
+			{
+				k = fragsort[j];
+				fragsort[j] = fragsort[j+1];
+				fragsort[j+1] = k;
+			}
+		}
+	}
+}
+
+/* JPG - added this for teamscores in default status bar // woods #pqteam
+==================
+Sbar_SortTeamFrags
+==================
+*/
+void Sbar_SortTeamFrags(void)
+{
+	int		i, j, k;
+
+	// sort by frags
+	scoreboardlines = 0;
+	for (i = 0; i < 14; i++)
+	{
+		if (cl.teamscores[i].colors)
+		{
+			fragsort[scoreboardlines] = i;
+			scoreboardlines++;
+		}
+	}
+
+	for (i = 0; i < scoreboardlines; i++)
+		for (j = 0; j < scoreboardlines - 1 - i; j++)
+			if (cl.teamscores[fragsort[j]].frags < cl.teamscores[fragsort[j + 1]].frags)
+			{
+				k = fragsort[j];
+				fragsort[j] = fragsort[j + 1];
+				fragsort[j + 1] = k;
+			}
+}
+
 int	Sbar_ColorForMap (int m)
 {
 	return m < 128 ? m + 8 : m + 8;
@@ -513,19 +589,46 @@ Sbar_SoloScoreboard -- johnfitz -- new layout
 void Sbar_SoloScoreboard (void)
 {
 	char	str[256];
-	int	minutes, seconds, tens, units;
-	int	len;
+	int minutes, seconds, tens, units;
+	int	min, smin, cmin;
+	int	len, ct, pl, st, mpc; // woods ct, pl
 
-	sprintf (str,"Kills: %i/%i", cl.stats[STAT_MONSTERS], cl.stats[STAT_TOTALMONSTERS]);
-	Sbar_DrawString (8, 12, str);
+	if (cl.gametype != GAME_DEATHMATCH)  // woods only in singleplayer
+	{
+		sprintf(str, "Kills: %i/%i", cl.stats[STAT_MONSTERS], cl.stats[STAT_TOTALMONSTERS]);
+		Sbar_DrawString(8, 12, str);
 
-	sprintf (str,"Secrets: %i/%i", cl.stats[STAT_SECRETS], cl.stats[STAT_TOTALSECRETS]);
-	Sbar_DrawString (312 - strlen(str)*8, 12, str);
+		sprintf(str, "Secrets: %i/%i", cl.stats[STAT_SECRETS], cl.stats[STAT_TOTALSECRETS]);
+		Sbar_DrawString(312 - strlen(str) * 8, 12, str);
+	}
+
+	else // woods add various times + PL
+	{
+		ct = cl.time - cl.maptime; // map connected time
+		st = ct + mpservertime; // server connected time #servertime
+		mpc = SDL_GetTicks() / 1000; // client open time
+		pl = atoi(cl.packetloss);
+		
+		min = ct / 60;
+		smin = st / 60;
+		cmin = mpc / 60;
+
+		sprintf(str, "Map %i  Server %i  QSSM %i  PL %i", min, smin, cmin, pl);
+
+		len = strlen(str);
+		if (len > 40)
+			Sbar_DrawScrollString(0, 12, 320, str);
+		else
+			M_Print(160 - len * 4, 37, str); // woods lets make this colored
+	}
 
 	if (!fitzmode)
 	{ /* QuakeSpasm customization: */
-		q_snprintf (str, sizeof(str), "skill %i", (int)(skill.value + 0.5));
-		Sbar_DrawString (160 - strlen(str)*4, 12, str);
+		if (cl.gametype != GAME_DEATHMATCH) // woods only in singleplayer
+		{
+			q_snprintf(str, sizeof(str), "skill %i", (int)(skill.value + 0.5));
+			Sbar_DrawString(160 - strlen(str) * 4, 12, str);
+		}
 
 		q_snprintf (str, sizeof(str), "%s (%s)", cl.levelname, cl.mapname);
 		len = strlen (str);
@@ -768,6 +871,7 @@ void Sbar_DrawInventory (void)
 	else
 	{
 	// sigils
+		if (!cls.demoplayback) // woods #demopercent (Baker Fitzquake Mark V) -- make room for demo %
 		for (i = 0; i < 4; i++)
 		{
 			if (cl.items & (1<<(28+i)))
@@ -786,53 +890,394 @@ void Sbar_DrawInventory (void)
 	}
 }
 
-//=============================================================================
-
 /*
 ===============
-Sbar_DrawFrags -- johnfitz -- heavy revision
+Sbar_DrawInventory_QW -- github.com/bangstk/Quakespasm // woods #sbarstyles
 ===============
 */
-void Sbar_DrawFrags (void)
+void Sbar_DrawInventory_QW (void)
 {
-	int	numscores, i, x;
-	char	num[12];
-	scoreboard_t	*s;
+	int	i, val;
+	char	num[6];
+	float	time;
+	int	flashon;
+	int extraguns = 2 * hipnotic;
 
-	Sbar_SortFrags ();
+	GL_SetCanvas(CANVAS_IBAR_QW);
 
-// draw the text
-	numscores = q_min(scoreboardlines, 4);
-
-	for (i = 0, x = 184; i<numscores; i++, x += 32)
+	//for qw hud, ammo backgrounds
+	for (i = 0; i < 4; i++)
 	{
-		s = &cl.scores[fragsort[i]];
-		if (!s->name[0])
-			continue;
-
-	// top color
-		Draw_FillPlayer (x + 10, 1, 28, 4, s->shirt, 1);
-
-	// bottom color
-		Draw_FillPlayer (x + 10, 5, 28, 3, s->pants, 1);
-
-	// number
-		sprintf (num, "%3i", s->frags);
-		Sbar_DrawCharacter (x + 12, -24, num[0]);
-		Sbar_DrawCharacter (x + 20, -24, num[1]);
-		Sbar_DrawCharacter (x + 28, -24, num[2]);
-
-	// brackets
-		if (fragsort[i] == cl.viewentity - 1)
+		if (rogue)
 		{
-			Sbar_DrawCharacter (x + 6, -24, 16);
-			Sbar_DrawCharacter (x + 32, -24, 17);
+			if (cl.stats[STAT_ACTIVEWEAPON] >= RIT_LAVA_NAILGUN)
+				Sbar_DrawSubPicAlpha(0, 188 - 11 * (4 - i) - 24, rsb_invbar[0], 1 + (i * 48), 0, 44, 11, scr_sbaralpha.value); //johnfitz -- scr_sbaralpha
+			else
+				Sbar_DrawSubPicAlpha(0, 188 - 11 * (4 - i) - 24, rsb_invbar[1], 1 + (i * 48), 0, 44, 11, scr_sbaralpha.value); //johnfitz -- scr_sbaralpha
+		}
+		else
+			Sbar_DrawSubPicAlpha(2, 188 - 11 * (4 - i) - 24, sb_ibar, 3 + (i * 48), 0, 42, 11, 1);
+	}
+
+	// weapons
+	for (i = 0; i < 7; i++)
+	{
+		if (cl.items & (IT_SHOTGUN << i))
+		{
+			time = cl.item_gettime[i];
+			flashon = (int)((cl.time - time) * 10);
+			if (flashon >= 10)
+			{
+				if (cl.stats[STAT_ACTIVEWEAPON] == (IT_SHOTGUN << i))
+					flashon = 1;
+				else
+					flashon = 0;
+			}
+			else
+				flashon = (flashon % 5) + 2;
+
+			Sbar_DrawPicAlpha(20, 32 + i * 16 - (16 * extraguns) - 24, sb_weapons[flashon][i], scr_sbaralpha.value);
+
+			if (flashon > 1)
+				sb_updates = 0;		// force update to remove flash
 		}
 	}
+
+	// MED 01/04/97
+	// hipnotic weapons
+	if (hipnotic)
+	{
+		int grenadeflashing = 0;
+		for (i = 0; i < 4; i++)
+		{
+			if (cl.items & (1 << hipweapons[i]))
+			{
+				time = cl.item_gettime[hipweapons[i]];
+				flashon = (int)((cl.time - time) * 10);
+				if (flashon >= 10)
+				{
+					if (cl.stats[STAT_ACTIVEWEAPON] == (1 << hipweapons[i]))
+						flashon = 1;
+					else
+						flashon = 0;
+				}
+				else
+					flashon = (flashon % 5) + 2;
+
+				// check grenade launcher
+				if (i == 2)
+				{
+					if (cl.items & HIT_PROXIMITY_GUN)
+					{
+						if (flashon)
+						{
+							grenadeflashing = 1;
+							Sbar_DrawPicAlpha(20, 40, hsb_weapons[flashon][2], scr_sbaralpha.value);
+						}
+					}
+				}
+				else if (i == 3)
+				{
+					if (cl.items & (IT_SHOTGUN << 4))
+					{
+						if (flashon && !grenadeflashing)
+						{
+							Sbar_DrawPicAlpha(20, 40, hsb_weapons[flashon][3], scr_sbaralpha.value);
+						}
+						else if (!grenadeflashing)
+						{
+							Sbar_DrawPicAlpha(20, 40, hsb_weapons[0][3], scr_sbaralpha.value);
+						}
+					}
+					else
+						Sbar_DrawPicAlpha(20, 40, hsb_weapons[flashon][4], scr_sbaralpha.value);
+				}
+				else
+					Sbar_DrawPicAlpha(20, (i + 7) * 16 - 24, hsb_weapons[flashon][i], scr_sbaralpha.value);
+
+				if (flashon > 1)
+					sb_updates = 0;	// force update to remove flash
+			}
+		}
+	}
+
+	if (rogue)
+	{
+		// check for powered up weapon.
+		if (cl.stats[STAT_ACTIVEWEAPON] >= RIT_LAVA_NAILGUN)
+		{
+			for (i = 0;i < 5;i++)
+			{
+				if (cl.stats[STAT_ACTIVEWEAPON] == (RIT_LAVA_NAILGUN << i))
+				{
+					Sbar_DrawPicAlpha(20, (i + 2) * 16 - 24 + 32, rsb_weapons[i], scr_sbaralpha.value);
+				}
+			}
+		}
+	}
+	
+	// ammo counts
+	for (i = 0; i < 4; i++)
+	{
+		val = cl.stats[STAT_SHELLS + i];
+		val = (val < 0) ? 0 : q_min(999, val);//johnfitz -- cap displayed value to 999
+		sprintf(num, "%3i", val);
+		if (num[0] != ' ')
+			Sbar_DrawCharacter(9, 188 - 11 * (4 - i) - 24, 18 + num[0] - '0');
+		if (num[1] != ' ')
+			Sbar_DrawCharacter(17, 188 - 11 * (4 - i) - 24, 18 + num[1] - '0');
+		if (num[2] != ' ')
+			Sbar_DrawCharacter(25, 188 - 11 * (4 - i) - 24, 18 + num[2] - '0');
+	}
+
+	flashon = 0;
+	// items
+	for (i = 0; i < 6; i++)
+	{
+		if (cl.items & (1 << (17 + i)))
+		{
+			time = cl.item_gettime[17 + i];
+			if (time && time > cl.time - 2 && flashon)
+			{	// flash frame
+				sb_updates = 0;
+			}
+			else
+			{
+				//MED 01/04/97 changed keys
+				if (!hipnotic || (i > 1))
+				{
+					Sbar_DrawPic(192 + i * 16, -16, sb_items[i]);
+				}
+			}
+			if (time && time > cl.time - 2)
+				sb_updates = 0;
+		}
+	}
+	//MED 01/04/97 added hipnotic items
+	// hipnotic items
+	if (hipnotic)
+	{
+		for (i = 0; i < 2; i++)
+		{
+			if (cl.items & (1 << (24 + i)))
+			{
+				time = cl.item_gettime[24 + i];
+				if (time && time > cl.time - 2 && flashon)
+				{	// flash frame
+					sb_updates = 0;
+				}
+				else
+				{
+					Sbar_DrawPic(288 + i * 16, -16, hsb_items[i]);
+				}
+				if (time && time > cl.time - 2)
+					sb_updates = 0;
+			}
+		}
+	}
+
+	if (rogue)
+	{
+		// new rogue items
+		for (i = 0; i < 2; i++)
+		{
+			if (cl.items & (1 << (29 + i)))
+			{
+				time = cl.item_gettime[29 + i];
+				if (time && time > cl.time - 2 && flashon)
+				{	// flash frame
+					sb_updates = 0;
+				}
+				else
+				{
+					Sbar_DrawPic(288 + i * 16, -16, rsb_items[i]);
+				}
+				if (time && time > cl.time - 2)
+					sb_updates = 0;
+			}
+		}
+	}
+	else
+	{
+		// sigils
+		if (!cls.demoplayback) // woods #demopercent (Baker Fitzquake Mark V) -- make room for demo %
+			for (i = 0; i < 4; i++)
+			{
+				if (cl.items & (1 << (28 + i)))
+				{
+					time = cl.item_gettime[28 + i];
+					if (time && time > cl.time - 2 && flashon)
+					{	// flash frame
+						sb_updates = 0;
+					}
+					else
+						Sbar_DrawPic(320 - 32 + i * 8, -16, sb_sigil[i]);
+					if (time && time > cl.time - 2)
+						sb_updates = 0;
+				}
+			}
+	}
+	GL_SetCanvas(CANVAS_SBAR);
 }
 
 //=============================================================================
 
+/*===============
+Sbar_DrawFrags -- for proquake, HEAVILY modified (draws match time, and teamscores) replace this entire function // woods #pqteam
+============== */
+void Sbar_DrawFrags(void)
+{
+	int				i, k, l;
+	int				top, bottom;
+	int				numscores;
+	int				x, f;
+	char			num[20];
+	scoreboard_t* s;
+	int				teamscores, colors, minutes, seconds, mask; // JPG - added these
+	int				match_time; // JPG - added this
+
+	if (scr_sbar.value == 2) // woods #sbarstyles
+		return;
+	
+	// JPG - check to see if we should sort teamscores instead
+	teamscores = cl.teamgame;
+
+	if (teamscores)
+		Sbar_SortTeamFrags();
+	else
+		Sbar_SortFrags();
+
+	// draw the text
+	l = scoreboardlines <= 4 ? scoreboardlines : 4;
+
+	x = 23;
+
+	// display match clock
+	// 
+	// JPG - check to see if we need to draw the timer
+	if (cl.minutes != 255)
+	{
+		if (l > 2)
+			l = 2;
+		mask = 0;
+		if (cl.minutes == 254)
+		{
+			strcpy(num, "    SD");
+			mask = 128;
+		}
+		else if (cl.minutes || cl.seconds)
+		{
+			if (cl.seconds >= 128)
+				sprintf(num, " -0:%02d", cl.seconds - 128);
+			else
+			{
+				if (cl.match_pause_time)
+					match_time = ceil(60.0 * cl.minutes + cl.seconds - (cl.match_pause_time - cl.last_match_time));
+				else
+					match_time = ceil(60.0 * cl.minutes + cl.seconds - (cl.time - cl.last_match_time));
+				minutes = match_time / 60;
+				seconds = match_time - 60 * minutes;
+				sprintf(num, "%3d:%02d", minutes, seconds);
+				if (!minutes)
+					mask = 128;
+			}
+		}
+		else
+		{
+			minutes = cl.time / 60;
+			seconds = cl.time - 60 * minutes;
+			minutes = minutes & 511;
+			sprintf (num, "%3d:%02d", minutes, seconds);
+		}
+
+		for (i = 0; i < 6; i++)
+			Sbar_DrawCharacter (((x + 9 + i) * 8)+3, -24, num[i] + mask);
+	}
+
+	// display frag/team colors
+
+	if (teamscores)
+	{
+		for (i = 0; i < l; i++)
+		{
+			k = fragsort[i];
+			colors = cl.teamscores[k].colors;
+
+			top = (colors & 15) << 4;
+			bottom = (colors & 15) << 4;
+
+			Draw_Fill((((x + 1) * 8) + 2), 1, 28, 4, top + 8, 1);
+			Draw_Fill((((x + 1) * 8) + 2), 5, 28, 3, bottom + 8, 1);
+
+			f = cl.teamscores[k].frags;
+
+			// draw number
+			sprintf (num, "%3i", f);
+			Sbar_DrawCharacter (((x + 1) * 8) + 4, -24, num[0]);
+			Sbar_DrawCharacter (((x + 2) * 8) + 4, -24, num[1]);
+			Sbar_DrawCharacter (((x + 3) * 8) + 4, -24, num[2]);
+
+			x += 4;
+		}
+	}
+	else
+	{ 
+		// draw the text
+		numscores = q_min(scoreboardlines, 2); // woods only show 2 scores to make room for clock
+
+		for (i = 0, x = 184; i < numscores; i++, x += 32)
+		{
+			s = &cl.scores[fragsort[i]];
+			if (!s->name[0])
+				continue;
+
+			// top color
+			Draw_FillPlayer (x + 10, 1, 28, 4, s->shirt, 1);
+
+			// bottom color
+			Draw_FillPlayer (x + 10, 5, 28, 3, s->pants, 1);
+
+			// number
+			sprintf(num, "%3i", s->frags);
+			Sbar_DrawCharacter (x + 12, -24, num[0]);
+			Sbar_DrawCharacter (x + 20, -24, num[1]);
+			Sbar_DrawCharacter (x + 28, -24, num[2]);
+
+			// brackets
+			if (fragsort[i] == cl.viewentity - 1)
+			{
+				Sbar_DrawCharacter (x + 6, -24, 16);
+				Sbar_DrawCharacter (x + 32, -24, 17);
+			}
+		}
+
+	}
+}
+
+/*
+===============
+Sbar_DrawRecord -- woods #showrecord
+===============
+*/
+
+void Sbar_DrawRecord(void)
+{
+	int y;
+
+	y = 0;
+
+	if (scr_sbar.value == 2) // woods #sbarstyles
+		return;
+
+	GL_SetCanvas(CANVAS_SBAR);
+
+	if (scr_viewsize.value <= 100)
+		y = 4;
+	else
+		return;
+
+	Draw_Fill(315, y, 1, 1, 249, 1);
+}
 
 /*
 ===============
@@ -923,6 +1368,9 @@ void Sbar_DrawFace (void)
 	else
 		anim = 0;
 	Sbar_DrawPic (112, 0, sb_faces[f][anim]);
+
+	if (cl.time <= cl.faceanimtime) // woods for damagehue on sbar face
+	Draw_Fill(112, 24, 24, 25, 25, .2);
 }
 
 static void Sbar_Voice(int y)
@@ -1030,27 +1478,19 @@ void Sbar_Draw (void)
 	else
 		Sbar_Voice(16);
 
-	//johnfitz -- don't waste fillrate by clearing the area behind the sbar
+	//johnfitz -- don't waste fillrate by clearing the area behind the sbar // woods edited for #sbarstyles
 	w = CLAMP (320.0f, scr_sbarscale.value * 320.0f, (float)glwidth);
 	if (sb_lines && glwidth > w)
-	{
-		if (scr_sbaralpha.value < 1)
-			Draw_TileClear (0, glheight - sb_lines, glwidth, sb_lines);
-		if (cl.gametype == GAME_DEATHMATCH)
-			Draw_TileClear (w, glheight - sb_lines, glwidth - w, sb_lines);
-		else
-		{
-			Draw_TileClear (0, glheight - sb_lines, (glwidth - w) / 2.0f, sb_lines);
-			Draw_TileClear ((glwidth - w) / 2.0f + w, glheight - sb_lines, (glwidth - w) / 2.0f, sb_lines);
-		}
-	}
-	//johnfitz
+		Draw_TileClear (0, glheight - sb_lines, glwidth, sb_lines);
 
 	GL_SetCanvas (CANVAS_SBAR); //johnfitz
 
 	if (scr_viewsize.value < 110) //johnfitz -- check viewsize instead of sb_lines
 	{
-		Sbar_DrawInventory ();
+		if (scr_sbar.value != 2)
+			Sbar_DrawInventory ();
+		if (scr_sbar.value == 2)
+			Sbar_DrawInventory_QW ();
 		if (cl.maxclients != 1)
 			Sbar_DrawFrags ();
 	}
@@ -1150,6 +1590,28 @@ void Sbar_Draw (void)
 	//johnfitz -- removed the vid.width > 320 check here
 	if (cl.gametype == GAME_DEATHMATCH)
 			Sbar_MiniDeathmatchOverlay ();
+
+	if (cls.demorecording) // woods #showrecord
+		Sbar_DrawRecord ();
+
+	if (cls.demoplayback && scr_viewsize.value <= 110) // woods #demopercent (Baker Fitzquake Mark V)
+	{
+		float completed_amount_0_to_1 = (cls.demo_offset_current - cls.demo_offset_start) / (float)cls.demo_file_length;
+		int complete_pct_int = 100 - (int)(100 * completed_amount_0_to_1 + 0.5);
+		char* tempstring = va("%i%%", complete_pct_int);
+		int len = strlen(tempstring), i;
+		int x;
+		x = 316;
+		if ((!strcmp(mute, "y") && (scr_sbar.value == 2)) || (scr_viewsize.value == 110 && (!strcmp(mute, "y")))) // woods #sbarstyles
+			x = 280;
+
+		// Bronze it
+		for (i = 0; i < len; i++)
+			tempstring[i] |= 128;
+
+		Sbar_DrawString(x - len * 8, -13, tempstring);
+	}
+
 }
 
 //=============================================================================
@@ -1194,16 +1656,43 @@ Sbar_DeathmatchOverlay
 */
 void Sbar_DeathmatchOverlay (void)
 {
-	qpic_t	*pic;
+	//qpic_t	*pic; // woods disabled
 	int	i, k, l;
 	int	x, y, f;
+	int w, w2; // woods for dynamic scoreboard
+	int	xofs, yofs; // woods #scoreboard
 	char	num[12];
+	char	shortname[16]; // woods for dynamic scoreboard during match, don't show ready
 	scoreboard_t	*s;
+	int ct = cl.time - cl.maptime; // woods connected map time #maptime
 
-	GL_SetCanvas (CANVAS_MENU); //johnfitz
+	// JPG 1.05 - check to see if we should update IP status  // woods for #iplog
+	if (iplog_size && (cl.time - cl.last_status_time > 5))
+	{
+		MSG_WriteByte(&cls.message, clc_stringcmd);
+		SZ_Print(&cls.message, "status\n");
+		cl.last_status_time = cl.time;
+	}
 
-	pic = Draw_CachePic ("gfx/ranking.lmp");
-	M_DrawPic ((320-pic->width)/2, 8, pic);
+	GL_SetCanvas (CANVAS_SCOREBOARD); //johnfitz  // woods #scoreboard
+
+	if ((cl.seconds > 0 && cl.seconds != 255) || (cl.minutes > 0 && cl.minutes != 255)) // woods -- match running 0 for CRCTF, 255 for CDMOD
+		w = -64;
+	else
+		w = 0;
+	if ((cl.seconds > 0 && cl.seconds != 255) || (cl.minutes > 0 && cl.minutes != 255)) // woods -- match running 0 for CRCTF, 255 for CDMOD
+		w2 = 32;
+	else
+		w2 = 0;
+
+	xofs = (vid.conwidth - 320) >> 1; // woods #scoreboard
+	yofs = (vid.conheight - 200) >> 1; // woods #scoreboard
+
+	x = xofs + 64 + w2; // woods #scoreboard
+	y = yofs - 20; // woods #scoreboard
+
+	//pic = Draw_CachePic ("gfx/ranking.lmp"); //woods #scoreboard (remove rankings logo)
+	//M_DrawPic ((320-pic->width)/2, 8, pic); woods #scoreboard
 
 // scores
 	Sbar_SortFrags ();
@@ -1211,14 +1700,41 @@ void Sbar_DeathmatchOverlay (void)
 // draw the text
 	l = scoreboardlines;
 
-	x = 80; //johnfitz -- simplified becuase some positioning is handled elsewhere
-	y = 40;
+	//x = 80; //johnfitz -- simplified becuase some positioning is handled elsewhere woods #scoreboard
+	//y = 40; woods #scoreboard
+
+	// woods for qrack +scoresbg #scoreboard
+
+	Draw_Fill (x - 64, y - 11, 328 + w, 10, 16, 1);		//inside
+	Draw_Fill (x - 64, y - 12, 329 + w, 1, 0, 1);		//Border - Top
+	Draw_Fill (x - 64, y - 12, 1, 11, 0, 1);			//Border - Left
+	Draw_Fill (x + 264 + w, y - 12, 1, 11, 0, 1);		//Border - Right
+	Draw_Fill (x - 64, y - 1, 329 + w, 1, 0, 1);		//Border - Bottom
+	Draw_Fill (x - 64, y - 1, 329 + w, 1, 0, 1);		//Border - Top
+
+	if ((cl.seconds > 0 && cl.seconds !=255) || (cl.minutes > 0 && cl.minutes != 255)) // woods -- match running 0 for CRCTF, 255 for CDMOD
+		Draw_String(x - 64, y - 10, "  ping  frags   name"); // woods
+	else
+		Draw_String (x - 64, y - 10, "  ping  frags   name            status"); // woods
+
 	for (i = 0; i < l; i++)
 	{
 		k = fragsort[i];
 		s = &cl.scores[k];
 		if (!s->name[0])
 			continue;
+
+		if (k == cl.viewentity - 1) // #scoreboard
+		{
+			Draw_Fill(x - 63, y, 328 + w, 10, 20, .8);  // woods
+		}
+		else
+		{
+			Draw_Fill(x - 63, y, 328 + w, 10, 18, .8);  // woods
+		}
+
+		Draw_Fill(x - 64, y, 1, 10, 0, 1);	//Border - Left // woods #scoreboard
+		Draw_Fill(x + 264 + w, y, 1, 10, 0, 1);	//Border - Right // woods #scoreboard
 
 	// draw background
 		if (S_Voip_Speaking(k))	//spike -- display an underlay for people who are speaking
@@ -1257,17 +1773,26 @@ void Sbar_DeathmatchOverlay (void)
 #endif
 
 		sprintf (num, "%4i", s->ping);
-		M_PrintWhite (x-8*5, y, num); //johnfitz -- was Draw_String, changed for stretched overlays
+		if (ct > 5) // woods don't print 0 print on connect
+		M_PrintWhite ((x-8*4)-22, y, num); //johnfitz -- was Draw_String, changed for stretched overlays // woods centered ping #scoreboard
 
 	// draw name
-		M_Print (x+64, y, s->name); //johnfitz -- was Draw_String, changed for stretched overlays
-
+		if ((cl.seconds > 0 && cl.seconds != 255) || (cl.minutes > 0 && cl.minutes != 255)) // match running 0 for CRCTF, 255 for CDMOD
+		{
+			sprintf (shortname, "%.15s", s->name); // woods only show name, not 'ready' or 'afk' -- 15 characters
+			M_PrintWhite (x + 64, y, shortname); //johnfitz -- was Draw_String, changed for stretched overlays // woods changed to white #scoreboard
+		}
+		else
+		M_PrintWhite (x + 64, y, s->name); //johnfitz -- was Draw_String, changed for stretched overlays // woods changed to white #scoreboard
+		
 		y += 10;
 	}
 
+	Draw_Fill(x - 64, y, 329 + w, 1, 0, 1);	//Border - Bottom // woods #scoreboard
+
 	GL_SetCanvas (CANVAS_SBAR); //johnfitz
 
-	if (!cls.message.cursize && cl.expectingpingtimes < realtime)
+	if ((!cls.message.cursize && cl.expectingpingtimes < realtime) && (cls.signon >= SIGNONS))
 	{
 		cl.expectingpingtimes = realtime + 5;
 		MSG_WriteByte (&cls.message, clc_stringcmd);

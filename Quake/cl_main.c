@@ -57,6 +57,11 @@ cvar_t	cl_minpitch = {"cl_minpitch", "-90", CVAR_ARCHIVE}; //johnfitz -- variabl
 
 cvar_t cl_recordingdemo = {"cl_recordingdemo", "", CVAR_ROM};	//the name of the currently-recording demo.
 cvar_t	cl_demoreel = {"cl_demoreel", "0", CVAR_ARCHIVE};
+cvar_t	cl_demospeed = { "cl_demospeed", "1", CVAR_NONE }; // woods #demotools
+
+cvar_t	cl_truelightning = {"cl_truelightning", "0",CVAR_ARCHIVE}; // woods for #truelight
+cvar_t	cl_say = {"cl_say","0", CVAR_ARCHIVE}; // woods #ezsay
+cvar_t  cl_afk = {"cl_afk", "1", CVAR_ARCHIVE }; // woods #smartafk
 
 client_static_t	cls;
 client_state_t	cl;
@@ -297,6 +302,20 @@ void CL_SignonReply (void)
 
 	case 4:
 		SCR_EndLoadingPlaque ();		// allow normal screen updates
+
+		if (cl.gametype == GAME_DEATHMATCH && cls.state == ca_connected) // woods for no background sounds
+			Cmd_ExecuteString("stopsound\n", src_command);
+		if ((cl_autodemo.value == 1) && (!cls.demoplayback) && (!cls.demorecording))   // woods for #autodemo
+			Cmd_ExecuteString("record\n", src_command);
+		key_dest = key_game; // woods exit console on server connect
+		cl.maptime = cl.time; // woods connected map time #maptime
+
+		char versionedname[10]; // woods #modtype [crx server check]
+		const char* val;
+		val = Info_GetKey(cl.serverinfo, "mod", versionedname, sizeof(versionedname));
+		if (!strcmp(val, "crx"))
+			cl.modtype = 1;
+
 		break;
 	}
 }
@@ -420,7 +439,8 @@ void CL_DecayLights (void)
 	dlight_t	*dl;
 	float		time;
 
-	time = cl.time - cl.oldtime;
+	time = fabs(cl.time - cl.oldtime); // To make sure it stays forward oriented time // woods #demorewind (Baker Fitzquake Mark V)
+	//time = cl.time - cl.oldtime;
 	if (time < 0)
 		return;
 
@@ -447,13 +467,15 @@ should be put at.
 */
 float	CL_LerpPoint (void)
 {
+	extern qboolean bumper_on; // woods #demorewind (Baker Fitzquake Mark V)
 	float	f, frac;
 
 	f = cl.mtime[0] - cl.mtime[1];
 
 	if (!f || cls.timedemo || (sv.active && !host_netinterval))
 	{
-		cl.time = cl.mtime[0];
+		cl.time = cl.ctime = cl.mtime[0]; // woods #demorewind (Baker Fitzquake Mark V)
+	//	cl.time = cl.mtime[0];
 		return 1;
 	}
 
@@ -463,19 +485,32 @@ float	CL_LerpPoint (void)
 		f = 0.1;
 	}
 
-	frac = (cl.time - cl.mtime[1]) / f;
+	frac = (cl.ctime - cl.mtime[1]) / f;
+	//frac = (cl.time - cl.mtime[1]) / f;
 
 	if (frac < 0)
 	{
 		if (frac < -0.01)
-			cl.time = cl.mtime[1];
+		{
+			if (bumper_on) // woods #demorewind (Baker Fitzquake Mark V)
+			{
+				cl.ctime = cl.mtime[1];
+			}
+			else cl.time = cl.ctime = cl.mtime[1];
+			//cl.time = cl.mtime[1];
 		frac = 0;
+		}
 	}
 	else if (frac > 1)
 	{
 		if (frac > 1.01)
-			cl.time = cl.mtime[0];
-		frac = 1;
+		{
+			if (bumper_on) // woods #demorewind (Baker Fitzquake Mark V)
+				cl.ctime = cl.mtime[0];
+			else cl.time = cl.ctime = cl.mtime[0]; // Here is where we get foobar'd
+		//	cl.time = cl.mtime[0];
+			frac = 1;
+		}
 	}
 
 	//johnfitz -- better nolerp behavior
@@ -608,6 +643,26 @@ static qboolean CL_AttachEntity(entity_t *ent, float frac)
 
 /*
 ===============
+CL_RocketTrail - woods (ironwail) #pemission
+Rate-limiting wrapper over R_RocketTrail
+===============
+*/
+static void CL_RocketTrail(entity_t* ent, int type)
+{
+	if (!(ent->lerpflags & LERP_RESETMOVE) && !ent->forcelink)
+	{
+		ent->traildelay -= cl.time - cl.oldtime;
+		if (ent->traildelay > 0.f)
+			return;
+		R_RocketTrail(ent->trailorg, ent->origin, type);
+	}
+
+	ent->traildelay = 1.f / 72.f;
+	VectorCopy(ent->origin, ent->trailorg);
+}
+
+/*
+===============
 CL_RelinkEntities
 ===============
 */
@@ -645,7 +700,7 @@ void CL_RelinkEntities (void)
 		cl.velocity[i] = cl.mvelocity[1][i] +
 			frac * (cl.mvelocity[0][i] - cl.mvelocity[1][i]);
 
-	if (cls.demoplayback)
+	if ((cls.demoplayback || (last_angle_time > host_time && !(in_attack.state & 3)))) // woods JPG - check for last_angle_time for smooth chasecam!  #smoothcam
 	{
 	// interpolate the angles
 		for (j=0 ; j<3 ; j++)
@@ -655,9 +710,13 @@ void CL_RelinkEntities (void)
 				d -= 360;
 			else if (d < -180)
 				d += 360;
-			cl.viewangles[j] = cl.mviewangles[1][j] + frac*d;
+			// JPG - I can't set cl.viewangles anymore since that messes up the demorecording.  So instead, #smoothcam
+			// I'll set lerpangles (new variable), and view.c will use that instead.
+			cl.lerpangles[j] = cl.mviewangles[1][j] + frac*d; // #smoothcam
 		}
 	}
+	else
+		VectorCopy(cl.viewangles, cl.lerpangles);
 
 	bobjrotate = anglemod(100*cl.time);
 
@@ -716,7 +775,7 @@ void CL_RelinkEntities (void)
 			AngleVectors (ent->angles, fv, rv, uv);
 
 			VectorMA (dl->origin, 18, fv, dl->origin);
-			dl->radius = 200 + (rand()&31);
+			dl->radius = 0; // woods get rid of flash on shooting
 			dl->minlight = 32;
 			dl->die = cl.time + 0.1;
 
@@ -730,20 +789,27 @@ void CL_RelinkEntities (void)
 			}
 			//johnfitz
 		}
+
+		// woods deadbodyfilter default
+
+		if ((ent->model->type == mod_alias) && cl.gametype == GAME_DEATHMATCH)
+			if (ent->frame == 49 || ent->frame == 60 || ent->frame == 69 || ent->frame == 84 || ent->frame == 93 || ent->frame == 102)
+				continue;
+
 		if (ent->effects & EF_BRIGHTLIGHT)
 		{
 			dl = CL_AllocDlight (i);
 			VectorCopy (ent->origin,  dl->origin);
 			dl->origin[2] += 16;
-			dl->radius = 400 + (rand()&31);
-			dl->die = cl.time + 0.001;
+			dl->radius = 416;// +(rand() & 31); // woods no light flicker
+			dl->die = cl.time + 0.1; //R00k was .001
 		}
 		if (ent->effects & (EF_DIMLIGHT|EF_RED|EF_BLUE|EF_GREEN))
 		{
 			dl = CL_AllocDlight (i);
 			VectorCopy (ent->origin,  dl->origin);
-			dl->radius = 200 + (rand()&31);
-			dl->die = cl.time + 0.001;
+			dl->radius = 216;// +(rand() & 31); // woods no light flicker
+			dl->die = cl.time + 0.1; //R00k was .001
 
 			if (ent->effects & (EF_RED|EF_BLUE|EF_GREEN))
 			{
@@ -773,41 +839,41 @@ void CL_RelinkEntities (void)
 			if (modelflags & EF_GIB)
 		{
 			if (PScript_EntParticleTrail(oldorg, ent, "TR_BLOOD"))
-				R_RocketTrail (oldorg, ent->origin, 2);
+				CL_RocketTrail(ent, 2); // woods(ironwail) #pemission
 		}
 		else if (modelflags & EF_ZOMGIB)
 		{
 			if (PScript_EntParticleTrail(oldorg, ent, "TR_SLIGHTBLOOD"))
-				R_RocketTrail (oldorg, ent->origin, 4);
+				CL_RocketTrail(ent, 4); // woods(ironwail) #pemission
 		}
 		else if (modelflags & EF_TRACER)
 		{
 			if (PScript_EntParticleTrail(oldorg, ent, "TR_WIZSPIKE"))
-				R_RocketTrail (oldorg, ent->origin, 3);
+				CL_RocketTrail(ent, 3); // woods(ironwail) #pemission
 		}
 		else if (modelflags & EF_TRACER2)
 		{
 			if (PScript_EntParticleTrail(oldorg, ent, "TR_KNIGHTSPIKE"))
-				R_RocketTrail (oldorg, ent->origin, 5);
+				CL_RocketTrail(ent, 5); // woods(ironwail) #pemission
 		}
 		else if (modelflags & EF_ROCKET)
 		{
 			if (PScript_EntParticleTrail(oldorg, ent, "TR_ROCKET"))
-				R_RocketTrail (oldorg, ent->origin, 0);
+				CL_RocketTrail(ent, 0); // woods(ironwail) #pemission
 			dl = CL_AllocDlight (i);
 			VectorCopy (ent->origin, dl->origin);
-			dl->radius = 200;
+			dl->radius = 0;		// woods eliminate rocket light
 			dl->die = cl.time + 0.01;
 		}
 		else if (modelflags & EF_GRENADE)
 		{
 			if (PScript_EntParticleTrail(oldorg, ent, "TR_GRENADE"))
-				R_RocketTrail (oldorg, ent->origin, 1);
+				CL_RocketTrail(ent, 1); // woods(ironwail) #pemission
 		}
 		else if (modelflags & EF_TRACER3)
 		{
 			if (PScript_EntParticleTrail(oldorg, ent, "TR_VORESPIKE"))
-				R_RocketTrail (oldorg, ent->origin, 6);
+				CL_RocketTrail(ent, 6); // woods(ironwail) #pemission
 		}
 
 		ent->forcelink = false;
@@ -1112,6 +1178,11 @@ int CL_ReadFromServer (void)
 
 	cl.oldtime = cl.time;
 	cl.time += host_frametime;
+
+	if (!cls.demorewind || !cls.demoplayback)	// by joe // woods #demorewind (Baker Fitzquake Mark V)
+		cl.ctime += host_frametime;
+	else
+		cl.ctime -= host_frametime;
 
 	do
 	{
@@ -1624,6 +1695,12 @@ void CL_Init (void)
 	Cvar_RegisterVariable (&cl_minpitch); //johnfitz -- variable pitch clamping
 	Cvar_RegisterVariable (&cl_recordingdemo); //spike -- for mod hacks. combine with cvar_string or something
 	Cvar_RegisterVariable (&cl_demoreel);
+	Cvar_RegisterVariable (&cl_demospeed); // woods
+
+	Cvar_RegisterVariable (&cl_truelightning); // woods for #truelight
+	Cvar_RegisterVariable (&gl_lightning_alpha); // woods for lighting alpha #lightalpha
+	Cvar_RegisterVariable (&cl_say); // woods for #ezsay
+	Cvar_RegisterVariable (&cl_afk); // woods #smartafk
 
 	Cmd_AddCommand ("entities", CL_PrintEntities_f);
 	Cmd_AddCommand ("disconnect", CL_Disconnect_f);

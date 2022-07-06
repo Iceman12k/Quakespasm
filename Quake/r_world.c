@@ -698,7 +698,7 @@ void R_DrawTextureChains_Water (qmodel_t *model, entity_t *ent, texchain_t chain
 	qboolean	bound;
 	float entalpha;
 
-	if (r_drawflat_cheatsafe || r_lightmap_cheatsafe) // ericw -- !r_drawworld_cheatsafe check moved to R_DrawWorld_Water ()
+	if (r_drawflat_cheatsafe/* || r_lightmap_cheatsafe*/) // ericw -- !r_drawworld_cheatsafe check moved to R_DrawWorld_Water () // woods #textureless to keep water
 		return;
 
 	if (gl_glsl_water_able)
@@ -1131,13 +1131,15 @@ void R_DrawTextureChains (qmodel_t *model, entity_t *ent, texchain_t chain)
 			glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 			glColor3f(0.5, 0.5, 0.5);
 		}
+		glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE); // woods #textureless make white, more grey and less white
+		glColor3f(0.75, 0.75, 0.75); // woods #textureless make white, more grey
 		R_DrawLightmapChains ();
 		if (!gl_overbright.value)
 		{
 			glColor3f(1,1,1);
 			glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 		}
-		R_DrawTextureChains_White (model, chain);
+		//R_DrawTextureChains_White (model, chain); // woods #textureless to keep sky and water
 		return;
 	}
 

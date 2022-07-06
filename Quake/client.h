@@ -41,9 +41,17 @@ typedef struct
 	plcolour_t shirt;
 	plcolour_t pants;
 	int		ping;
+	int		addr;			// JPG - added this // woods for #iplog
 
 	char	userinfo[8192];
 } scoreboard_t;
+
+// JPG - added this for teamscore status bar and proquake messages // rook / woods 8/31/2021 #pqteam
+typedef struct
+{
+	int colors;
+	int frags;
+} teamscore_t;
 
 typedef struct
 {
@@ -119,6 +127,25 @@ typedef struct
 // entering a map (and clearing client_state_t)
 	qboolean	demorecording;
 	qboolean	demoplayback;
+	qboolean	demorewind; // woods #demorewind (Baker Fitzquake Mark V)
+	float		demospeed; // woods #demorewind (Baker Fitzquake Mark V)
+
+	// woods #demopercent (Baker Fitzquake Mark V)
+
+	int			demo_file_length;		// Length of file in bytes
+	int			demo_offset_start;		// If in a pak, the offset into the file otherwise 0.
+	int			demo_offset_current;	// Current offset into the file, updated as the demo is player
+
+	float		demo_hosttime_start;	// For measuring capturedemo time completion estimates.
+	float		demo_hosttime_elapsed;	// Does not advance if paused.
+	float		demo_cltime_start;		// Above except cl.time
+	float		demo_cltime_elapsed;	// Above except cl.time
+
+	char		demoname[MAX_OSPATH];	// So we can print demo whatever completed. 
+
+	float		demospeed_state;		// woods, use spacebar for pause
+
+	// end woods #demopercent ((Baker Fitzquake Mark V)
 
 // did the user pause demo playback? (separate from cl.paused because we don't
 // want a svc_setpause inside the demo to actually pause demo playback).
@@ -213,6 +240,7 @@ typedef struct
 	double		time;			// clients view of time, should be between
 								// servertime and oldservertime to generate
 								// a lerp point for other data
+	double		ctime;			// woods #demorewind (Baker Fitzquake Mark V) -- inclusive of demo speed (can go backwards)
 	double		oldtime;		// previous cl.time, time-oldtime is used
 								// to decay light values and smooth step ups
 
@@ -288,7 +316,11 @@ typedef struct
 	} printtype;
 	int printplayer;
 	float expectingpingtimes;
+	float expectingpltimes;  // woods #scrpl
 	float printversionresponse;
+	float printqsys; // woods #q_sysinfo (qrack)
+	float printconfig; // woods #f_config
+	float printrandom; // woods #f_random
 
 	//spike -- moved this stuff here to deal with downloading content named by the server
 	qboolean sendprespawn;	//download+load content, send the prespawn command once done
@@ -311,6 +343,31 @@ typedef struct
 	vec3_t		listener_axis[3];
 
 	char serverinfo[8192];	// \key\value infostring data.
+
+	teamscore_t*	teamscores;			// [13] - JPG for teamscores in status bar // woods #pqteam                  
+	qboolean		teamgame;			// JPG = true for match, false for individual // woods #pqteam
+	int				minutes;			// JPG - for match time in status bar // woods #pqteam
+	int				seconds;			// JPG - for match time in status bar // woods #pqteam
+	double			last_match_time;	// JPG - last time match time was obtained // woods #pqteam
+	double			last_ping_time;		// JPG - last time pings were obtained // woods #pqteam
+	qboolean		console_ping;		// JPG 1.05 - true if the ping came from the console // woods #pqteam
+	double			last_status_time;	// JPG 1.05 - last time status was obtained // woods #pqteam
+	qboolean		console_status;		// JPG 1.05 - true if the status came from the console // woods #pqteam
+	double			match_pause_time;	// JPG - time that match was paused (or 0) // woods #pqteam
+	vec3_t			death_location;		// JPG 3.20 - used for %d formatting #loc // woods #pqteam
+
+	int			conflag;			// woods for keeping track of what's coming in string for parsing #confilter #ghostcode
+	char		scrpacketloss[12];			// woods for keeping track of what's coming in string for parsing #scrpl
+	char		packetloss[12];			// woods for keeping track of what's coming in string for parsing #scrpl
+	char		ffa[2];				// woods for #matchhud #flagstatus
+	char		flagstatus[2];		// woods for #flagstatus
+	char		ghostcode[2];		// woods for ghost code to memory #ghostcode
+	char		observer[2];		// woods for ghost code to memory #observer
+	int			maptime;			// woods connected map time #maptime
+	int			fps;				// woods #f_config
+	int			modtype;			// woods #modtype detect mp server mod type 3 - crmod, 2 - crctf, 1 - crx
+	vec3_t		lerpangles;			// JPG - angles now used by view.c so that smooth chasecam doesn't fuck up demos // woods #smoothcam
+
 } client_state_t;
 
 
@@ -340,6 +397,7 @@ extern	cvar_t	cl_recordingdemo;
 extern	cvar_t	cl_shownet;
 extern	cvar_t	cl_nolerp;
 extern	cvar_t	cl_demoreel;
+extern	cvar_t	cl_demospeed; // woods #demotools
 
 extern	cvar_t	cfg_unbindall;
 
@@ -353,6 +411,10 @@ extern	cvar_t	m_yaw;
 extern	cvar_t	m_forward;
 extern	cvar_t	m_side;
 
+extern	cvar_t	cl_truelightning; // woods for truelightning #truelight
+extern	cvar_t	gl_lightning_alpha; // woods transparent lightning #lightalpha
+extern	cvar_t	cl_say; // woods #ezsay
+extern	cvar_t	cl_afk; // woods #smartafk
 
 #define	MAX_TEMP_ENTITIES			256		//johnfitz -- was 64
 
@@ -401,6 +463,7 @@ typedef struct
 extern	kbutton_t	in_mlook, in_klook;
 extern 	kbutton_t 	in_strafe;
 extern 	kbutton_t 	in_speed;
+extern	kbutton_t	in_attack; // JPG - added this for completeness from PROQUAKE  // woods #smoothcam
 
 void CL_InitInput (void);
 void CL_AccumulateCmd (void);

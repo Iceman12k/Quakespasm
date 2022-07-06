@@ -120,6 +120,8 @@
 		66991C091DBAB4A600C373C0 /* Quakespasm-Music.txt in CopyFiles */ = {isa = PBXBuildFile; fileRef = 66991C031DBAB47000C373C0 /* Quakespasm-Music.txt */; };
 		66991C0A1DBAB4A600C373C0 /* Quakespasm.html in CopyFiles */ = {isa = PBXBuildFile; fileRef = 66991C041DBAB47000C373C0 /* Quakespasm.html */; };
 		66991C0B1DBAB4A600C373C0 /* Quakespasm.txt in CopyFiles */ = {isa = PBXBuildFile; fileRef = 66991C051DBAB47000C373C0 /* Quakespasm.txt */; };
+		FD07DF942782B4E3005CB9D9 /* iplog.c in Sources */ = {isa = PBXBuildFile; fileRef = FD07DF932782B4E3005CB9D9 /* iplog.c */; };
+		FD07DF972782B50C005CB9D9 /* location.c in Sources */ = {isa = PBXBuildFile; fileRef = FD07DF962782B50C005CB9D9 /* location.c */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -330,7 +332,7 @@
 		6348AF8F26EA46F500E036E2 /* snd_xmp.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = snd_xmp.c; path = ../Quake/snd_xmp.c; sourceTree = SOURCE_ROOT; };
 		6348AF9026EA46F500E036E2 /* snd_xmp.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = snd_xmp.h; path = ../Quake/snd_xmp.h; sourceTree = SOURCE_ROOT; };
 		63D6EB3423A255900047028C /* snd_mp3tag.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = snd_mp3tag.c; path = ../Quake/snd_mp3tag.c; sourceTree = SOURCE_ROOT; };
-		664D98F919CF6B78000D395C /* QuakeSpasm-Spiked-SDL2.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "QuakeSpasm-Spiked-SDL2.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		664D98F919CF6B78000D395C /* QSS-M.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "QSS-M.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		664D98FB19CF6B78000D395C /* Info copy.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info copy.plist"; sourceTree = "<group>"; };
 		664D990519CF6E16000D395C /* SDL2.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = SDL2.framework; sourceTree = SOURCE_ROOT; };
 		668A010E277D0BD6009D9427 /* pr_ext.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = pr_ext.c; path = ../Quake/pr_ext.c; sourceTree = "<group>"; };
@@ -356,6 +358,10 @@
 		B021C20714A5FF7E003F18D6 /* cfgfile.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = cfgfile.c; path = ../Quake/cfgfile.c; sourceTree = SOURCE_ROOT; };
 		B021C20814A5FF7E003F18D6 /* cfgfile.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = cfgfile.h; path = ../Quake/cfgfile.h; sourceTree = SOURCE_ROOT; };
 		F5F5DE80017CB4370103A810 /* libmikmod.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libmikmod.dylib; path = codecs/lib/libmikmod.dylib; sourceTree = "<group>"; };
+		FD07DF922782B4CB005CB9D9 /* iplog.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = iplog.h; path = ../Quake/iplog.h; sourceTree = "<group>"; };
+		FD07DF932782B4E3005CB9D9 /* iplog.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = iplog.c; path = ../Quake/iplog.c; sourceTree = "<group>"; };
+		FD07DF952782B4FE005CB9D9 /* location.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = location.h; path = ../Quake/location.h; sourceTree = "<group>"; };
+		FD07DF962782B50C005CB9D9 /* location.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = location.c; path = ../Quake/location.c; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -407,7 +413,7 @@
 		19C28FACFE9D520D11CA2CBB /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				664D98F919CF6B78000D395C /* QuakeSpasm-Spiked-SDL2.app */,
+				664D98F919CF6B78000D395C /* QSS-M.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -504,6 +510,7 @@
 				483A78150D2EEA5400CB2E4C /* cvar.c */,
 				483A78170D2EEA5400CB2E4C /* host.c */,
 				483A78160D2EEA5400CB2E4C /* host_cmd.c */,
+				FD07DF962782B50C005CB9D9 /* location.c */,
 				48243B130D33F01A00C29F8F /* main_sdl.c */,
 				483A78180D2EEA5400CB2E4C /* mathlib.c */,
 				668A0111277D0BE8009D9427 /* mdfour.c */,
@@ -600,6 +607,7 @@
 				483A783C0D2EEAAB00CB2E4C /* cl_main.c */,
 				483A783D0D2EEAAB00CB2E4C /* cl_parse.c */,
 				483A783E0D2EEAAB00CB2E4C /* cl_tent.c */,
+				FD07DF932782B4E3005CB9D9 /* iplog.c */,
 				48134A1412102F400015BF15 /* net_bsd.c */,
 				48728D280D3004A70004D61B /* net_dgrm.c */,
 				48728D2A0D3004A80004D61B /* net_loop.c */,
@@ -625,6 +633,7 @@
 				483A77EA0D2EE97700CB2E4C /* cvar.h */,
 				6348AF7D26EA437E00E036E2 /* default_cfg.h */,
 				6348AF7F26EA439C00E036E2 /* filenames.h */,
+				FD07DF952782B4FE005CB9D9 /* location.h */,
 				483A77EB0D2EE97700CB2E4C /* mathlib.h */,
 				483A77EC0D2EE97700CB2E4C /* menu.h */,
 				4846EB500D329BEB00A108DE /* platform.h */,
@@ -658,6 +667,7 @@
 			isa = PBXGroup;
 			children = (
 				483A77F90D2EE9A900CB2E4C /* client.h */,
+				FD07DF922782B4CB005CB9D9 /* iplog.h */,
 				483A77FA0D2EE9A900CB2E4C /* net.h */,
 				48134A1512102F400015BF15 /* net_defs.h */,
 				48728D290D3004A80004D61B /* net_dgrm.h */,
@@ -731,9 +741,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		664D988819CF6B78000D395C /* QuakeSpasm-Spiked-SDL2 */ = {
+		664D988819CF6B78000D395C /* QSS-M */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 664D98F619CF6B78000D395C /* Build configuration list for PBXNativeTarget "QuakeSpasm-Spiked-SDL2" */;
+			buildConfigurationList = 664D98F619CF6B78000D395C /* Build configuration list for PBXNativeTarget "QSS-M" */;
 			buildPhases = (
 				664D988919CF6B78000D395C /* Resources */,
 				664D988D19CF6B78000D395C /* Sources */,
@@ -746,10 +756,10 @@
 			);
 			dependencies = (
 			);
-			name = "QuakeSpasm-Spiked-SDL2";
+			name = "QSS-M";
 			productInstallPath = "$(HOME)/Applications";
 			productName = QuakeSpasm;
-			productReference = 664D98F919CF6B78000D395C /* QuakeSpasm-Spiked-SDL2.app */;
+			productReference = 664D98F919CF6B78000D395C /* QSS-M.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -774,7 +784,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				664D988819CF6B78000D395C /* QuakeSpasm-Spiked-SDL2 */,
+				664D988819CF6B78000D395C /* QSS-M */,
 			);
 		};
 /* End PBXProject section */
@@ -827,6 +837,7 @@
 				664D98A919CF6B78000D395C /* sv_main.c in Sources */,
 				664D98AA19CF6B78000D395C /* sv_move.c in Sources */,
 				668A011C277D0C30009D9427 /* snd_voip.c in Sources */,
+				FD07DF942782B4E3005CB9D9 /* iplog.c in Sources */,
 				664D98AB19CF6B78000D395C /* sv_phys.c in Sources */,
 				664D98AC19CF6B78000D395C /* sv_user.c in Sources */,
 				664D98AD19CF6B78000D395C /* cd_sdl.c in Sources */,
@@ -856,6 +867,7 @@
 				664D98C219CF6B78000D395C /* net_dgrm.c in Sources */,
 				664D98C319CF6B78000D395C /* net_loop.c in Sources */,
 				664D98C419CF6B78000D395C /* snd_dma.c in Sources */,
+				FD07DF972782B50C005CB9D9 /* location.c in Sources */,
 				664D98C519CF6B78000D395C /* snd_mem.c in Sources */,
 				664D98C619CF6B78000D395C /* snd_mix.c in Sources */,
 				664D98C719CF6B78000D395C /* main_sdl.c in Sources */,
@@ -949,7 +961,7 @@
 					"$(SRCROOT)/codecs/lib",
 					"$(PROJECT_DIR)/vcpkg/installed/x64-osx-10.9/lib",
 				);
-				PRODUCT_NAME = "QuakeSpasm-Spiked-SDL2";
+				PRODUCT_NAME = "QSS-M";
 				WRAPPER_EXTENSION = app;
 				ZERO_LINK = YES;
 			};
@@ -1007,7 +1019,7 @@
 					"-arch",
 					ppc,
 				);
-				PRODUCT_NAME = "QuakeSpasm-Spiked-SDL2";
+				PRODUCT_NAME = "QSS-M";
 				WRAPPER_EXTENSION = app;
 			};
 			name = Release;
@@ -1112,7 +1124,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		664D98F619CF6B78000D395C /* Build configuration list for PBXNativeTarget "QuakeSpasm-Spiked-SDL2" */ = {
+		664D98F619CF6B78000D395C /* Build configuration list for PBXNativeTarget "QSS-M" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				664D98F719CF6B78000D395C /* Debug */,

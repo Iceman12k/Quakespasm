@@ -50,7 +50,7 @@ int		con_current;		// where next message will be printed
 int		con_x;				// offset in current line for next print
 char		*con_text = NULL;
 
-cvar_t		con_notifytime = {"con_notifytime","3",CVAR_NONE};	//seconds
+cvar_t		con_notifytime = {"con_notifytime","3",CVAR_ARCHIVE};	//seconds
 cvar_t		con_logcenterprint = {"con_logcenterprint", "1", CVAR_NONE}; //johnfitz
 
 char		con_lastcenterstring[1024]; //johnfitz
@@ -68,6 +68,7 @@ qboolean	con_debuglog = false;
 
 qboolean	con_initialized;
 
+void Char_Console2(int key); // woods #ezsay add leading space for mode 2
 
 /*
 ================
@@ -126,6 +127,9 @@ void Con_ToggleConsole_f (void)
 		M_ToggleMenu(0);
 		key_dest = key_console;
 	}
+
+	if ((key_linepos == 1) && (cl_say.value == 2)) // woods #ezsay add leading space for mode 2
+		Char_Console2(32);
 
 	SCR_EndLoadingPlaque ();
 	memset (con_times, 0, sizeof(con_times));
@@ -203,6 +207,22 @@ static void Con_Dump_f (void)
 
 /*
 ================
+Con_Copy_f -- woods #concopy
+================
+*/
+void Con_Copy_f(void)
+{
+	char *f;
+
+	Con_Dump_f();
+	f = (char*)COM_LoadHunkFile("condump.txt", NULL);
+#if defined(USE_SDL2)
+	SDL_SetClipboardText(f);
+#endif
+}
+
+/*
+================
 Con_ClearNotify
 ================
 */
@@ -213,7 +233,6 @@ void Con_ClearNotify (void)
 	for (i = 0; i < NUM_CON_TIMES; i++)
 		con_times[i] = 0;
 }
-
 
 /*
 ================
@@ -240,7 +259,6 @@ static void Con_MessageMode2_f (void)
 	chat_team = true;
 	key_dest = key_message;
 }
-
 
 /*
 ================
@@ -385,9 +403,144 @@ static void Con_Print (const char *txt)
 	int		c, l;
 	static int	cr;
 	int		mask;
+	int     minutes, minutes_next, seconds, seconds_next, match_time; // #smartteam
+	char			com[35]; // #smartteam
 	qboolean	boundary;
+	static int fixline = 0; // woods #confilter
 
 	//con_backscroll = 0; //johnfitz -- better console scrolling
+
+	// begin woods for pq_confilter+
+
+	if (cl.gametype == GAME_DEATHMATCH && cls.state == ca_connected)
+	{
+		if (cl.teamgame)  // begin woods smart team comm #smartteam
+		{ 
+			if (cl.match_pause_time)
+				match_time = ceil(60.0 * cl.minutes + cl.seconds - (cl.match_pause_time - cl.last_match_time));
+			else
+				match_time = ceil(60.0 * cl.minutes + cl.seconds - (cl.time - cl.last_match_time));
+
+			minutes_next = (match_time-33) / 60;
+			seconds_next = (match_time - 33) - 60 * minutes_next;
+			minutes = match_time / 60;
+			seconds = match_time - 60 * minutes;
+			
+			if (!strcmp(txt, "Quad Damage"))
+			{
+				sprintf(com, "say_team got quad at: %02d", seconds);
+				Cmd_ExecuteString(com, src_command);
+				Cmd_ExecuteString(com, src_command);
+				Cmd_ExecuteString(com, src_command);
+			}
+
+			if (!strcmp(txt, "Pentagram of Protection"))
+			{
+				sprintf(com, "say_team got pent at: %02d", seconds);
+				Cmd_ExecuteString(com, src_command);
+				Cmd_ExecuteString(com, src_command);
+				Cmd_ExecuteString(com, src_command);
+			}
+
+			if (!strcmp(txt, "Ring of Shadows"))
+			{
+				sprintf(com, "say_team got eyes at: %02d", seconds);
+				Cmd_ExecuteString(com, src_command);
+				Cmd_ExecuteString(com, src_command);
+				Cmd_ExecuteString(com, src_command);
+			}
+			if (!strcmp(txt, "Quad Damage is wearing off\n") && match_time > 33)
+				{
+					sprintf(com, "say_team next quad at: %02d", seconds_next);
+					Cmd_ExecuteString(com, src_command);
+					Cmd_ExecuteString(com, src_command);
+					Cmd_ExecuteString(com, src_command);
+				}
+ 				
+		}
+
+		if (!strcmp(txt, "You receive "))
+
+			cl.conflag = 2;  // flag beginnings
+
+	// need to terminate the conflag with end of prints to parse out numbers
+		if ((!strcmp(txt, " health\n")))  // line end included
+			cl.conflag = 0; // flag end of string
+
+		if (cl.conflag == 2)  // delete when flag set
+		{
+			fixline = 1; // voodoo
+			return;
+		}
+
+		if (!strcmp(txt, "is ")) // the string directly before ghost code #ghostcode
+			cl.conflag = 3; // set flag for ghostcode
+
+		if ((cl.conflag == 3) && (strcmp(txt, "is ")))  // string before ghost number #ghostcode
+		{
+			memcpy(cl.ghostcode, txt, sizeof(cl.ghostcode)); // copy ghostcode to memory
+			cl.conflag = 0; // reset flag	
+		}
+
+		if (!strcmp(txt, "chase mode - help-chase for help\n") || // woods #observer
+			!strcmp(txt, "eyecam mode - help-chase for help\n"))
+			strncpy(cl.observer, "y", sizeof(cl.observer));
+
+		if ((!strcmp(txt, "Smoothing ")) || (!strcmp(txt, "OFF "))) // "smoothing OFF" woods #observer
+			strncpy(cl.observer, "n", sizeof(cl.observer));
+
+		if     // other messages, exact cases
+			(
+				!strcmp(txt, "Quad Damage is wearing off\n") ||
+				!strcmp(txt, "Protection is almost burned out\n") ||
+				!strcmp(txt, "no weapon.\n") ||
+				!strcmp(txt, "not enough ammo.\n") ||
+				!strcmp(txt, "You got armor\n") ||
+				!strcmp(txt, "Ring of Shadows magic is fading\n") ||
+				!strcmp(txt, "Air supply in Biosuit expiring\n") ||
+				!strcmp(txt, "You got the ") ||
+				!strcmp(txt, "Rocket Launcher") ||
+				!strcmp(txt, "Grenade Launcher") ||
+				!strcmp(txt, "Super Nailgun") ||
+				!strcmp(txt, "Thunderbolt") ||
+				!strcmp(txt, "Double-barrelled Shotgun") ||
+				!strcmp(txt, "nailgun") ||
+				!strcmp(txt, "nails") ||
+				!strcmp(txt, "cells") ||
+				!strcmp(txt, "rockets") ||
+				!strcmp(txt, "shells") ||
+				!strcmp(txt, "spikes") ||
+				!strncmp(txt, "The Blue team has", 17) ||
+				!strncmp(txt, "The Red team has", 16) ||
+				!strncmp(txt, "Match ends", 10) ||
+			//	!strcmp(txt, " health\n") ||
+				!strncmp(txt, "\"timelimit\" changed",19))
+		{
+			fixline = 1;
+			if (
+				!strcmp(txt, "Quad Damage is wearing off\n") ||
+				!strcmp(txt, "Protection is almost burned out\n") ||
+				!strcmp(txt, "no weapon.\n") ||
+				!strcmp(txt, "not enough ammo.\n") ||
+				!strcmp(txt, "You got armor\n") ||
+				!strcmp(txt, "Ring of Shadows magic is fading\n") ||
+				!strcmp(txt, "Air supply in Biosuit expiring\n") ||
+				!strncmp(txt, "The Blue team has", 17) ||
+				!strncmp(txt, "The Red team has", 16) ||
+				!strncmp(txt, "Match ends", 10) ||
+				!strncmp(txt, "\"timelimit\" changed", 19))
+				Con_Printf("\n");
+
+			return;
+		}
+
+		if (!strcmp(txt, " health\n"))
+		{
+			Con_Printf("\n");
+			return;
+		}
+	}
+	// end woods for eliminating messages confilter+
 
 	if (txt[0] == 1)
 	{
@@ -533,6 +686,11 @@ static void Con_Print (const char *txt)
 		switch (c)
 		{
 		case '\n':
+			if (fixline) /// woods JPG 1.05 - make the "you got" messages temporary #confilter
+			{        
+				cr = 1;
+				fixline = 0;
+			}
 			con_x = 0;
 			break;
 
@@ -864,7 +1022,9 @@ void AddToTabList (const char *name, const char *type)
 	char	*i_bash;
 	const char *i_name;
 
-	if (!*bash_partial)
+	//mxd. Added bash_singlematch check, so bash_partial is set only once per BuildTabList() call.
+	//mxd. Because matched part is no longer expected to be at the start of a command, we can end up with empty bash_partial in the middle of BuildTabList() call.
+	if (!*bash_partial && bash_singlematch) // mxd
 	{
 		strncpy (bash_partial, name, 79);
 		bash_partial[79] = '\0';
@@ -995,6 +1155,19 @@ const char *FindCompletion (const char *partial, filelist_item_t *filelist, int 
 
 /*
 ============
+TabListItemNameContains -- mxd (https://github.com/m-x-d/Quakespasm/tree/better-tab-completion)
+============
+*/
+qboolean TabListItemNameContains(const char* name, const char* partial, const int len)
+{
+	if (len < 2)
+		return !q_strncasecmp(partial, name, len);
+
+	return q_strcasestr(name, partial) != NULL;
+}
+
+/*
+============
 BuildTabList -- johnfitz
 ============
 */
@@ -1013,15 +1186,15 @@ void BuildTabList (const char *partial)
 
 	cvar = Cvar_FindVarAfter ("", CVAR_NONE);
 	for ( ; cvar ; cvar=cvar->next)
-		if (!q_strncasecmp (partial, cvar->name, len))
+		if (TabListItemNameContains(cvar->name, partial, len)) //mxd
 			AddToTabList (cvar->name, "cvar");
 
 	for (cmd=cmd_functions ; cmd ; cmd=cmd->next)
-		if (!q_strncasecmp (partial,cmd->name, len) && cmd->srctype != src_server)
+		if (cmd->srctype != src_server && TabListItemNameContains(cmd->name, partial, len)) // mxd
 			AddToTabList (cmd->name, "command");
 
 	for (alias=cmd_alias ; alias ; alias=alias->next)
-		if (!q_strncasecmp (partial, alias->name, len))
+		if (TabListItemNameContains(alias->name, partial, len)) // mxd
 			AddToTabList (alias->name, "alias");
 }
 
@@ -1101,6 +1274,7 @@ void Con_TabComplete (void)
 	mark = Hunk_LowMark();
 	if (!key_tabpartial[0]) //first time through
 	{
+		const size_t partial_len = strlen(partial);
 		q_strlcpy (key_tabpartial, partial, MAXCMDLINE);
 		BuildTabList (key_tabpartial);
 
@@ -1114,7 +1288,14 @@ void Con_TabComplete (void)
 			Con_SafePrintf("\n");
 			do
 			{
-				Con_SafePrintf("   %s (%s)\n", t->name, t->type);
+				char* matchchar = q_strcasestr(t->name, partial); // mxd
+				char start[MAXCMDLINE], mid[MAXCMDLINE], end[MAXCMDLINE]; // mxd
+
+				q_strlcpy(start, t->name, matchchar - t->name + 1); // mxd
+				q_strlcpy(mid, matchchar, partial_len + 1); // mxd
+				q_strlcpy(end, matchchar + partial_len, strlen(t->name) - partial_len + 1); // mxd
+
+				Con_SafePrintf("   %s^m%s^m%s (%s)\n", start, mid, end, t->type); // mxd
 				t = t->next;
 			} while (t != tablist);
 			Con_SafePrintf("\n");
@@ -1122,7 +1303,9 @@ void Con_TabComplete (void)
 
 	//	match = tablist->name;
 	// First time, just show maximum matching chars -- S.A.
-		match = bash_partial;
+	//match = bash_partial;
+	//mxd. Use bash_partial only when it starts with entered text. 
+		match = ((strlen(bash_partial) > partial_len && !q_strncasecmp(partial, bash_partial, partial_len)) ? bash_partial : partial); // mxd
 	}
 	else
 	{

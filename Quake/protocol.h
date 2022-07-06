@@ -347,6 +347,16 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define svcfte_updateentities		86
 //spike -- end
 
+// JPG - added ProQuake commands woods #pqteam
+#define pqc_nop			1
+#define pqc_new_team	2
+#define pqc_erase_team	3
+#define pqc_team_frags	4
+#define	pqc_match_time	5
+#define pqc_match_reset	6
+#define pqc_ping_times	7
+// JPG - end mod
+
 // 2021 re-release server messages - see:
 // https://steamcommunity.com/sharedfiles/filedetails/?id=2679459726
 #define svcqe_botchat				38

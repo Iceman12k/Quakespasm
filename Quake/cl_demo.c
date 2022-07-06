@@ -19,9 +19,20 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
+#include "time.h"
 #include "quakedef.h"
 
 static void CL_FinishTimeDemo (void);
+
+typedef struct framepos_s // woods #demorewind (Baker Fitzquake Mark V)
+{
+	long				baz;
+	struct framepos_s* next;
+} framepos_t;
+
+framepos_t* dem_framepos = NULL;
+qboolean	start_of_demo = false;
+qboolean	bumper_on = false;
 
 /*
 ==============================================================================
@@ -82,6 +93,34 @@ static void CL_WriteDemoMessage (void)
 	fflush (cls.demofile);
 }
 
+void PushFrameposEntry(long fbaz) // woods #demorewind (Baker Fitzquake Mark V)
+{
+	framepos_t* newf;
+
+	newf = malloc(sizeof(framepos_t)); // Demo rewind
+	newf->baz = fbaz;
+
+	if (!dem_framepos)
+	{
+		newf->next = NULL;
+		start_of_demo = false;
+	}
+	else
+	{
+		newf->next = dem_framepos;
+	}
+	dem_framepos = newf;
+}
+
+static void EraseTopEntry(void) // woods #demorewind (Baker Fitzquake Mark V)
+{
+	framepos_t* top;
+
+	top = dem_framepos;
+	dem_framepos = dem_framepos->next;
+	free(top);
+}
+
 static int CL_GetDemoMessage (void)
 {
 	int	r, i;
@@ -89,6 +128,13 @@ static int CL_GetDemoMessage (void)
 
 	if (cls.demopaused)
 		return 0;
+
+	if (start_of_demo && cls.demorewind) // woods #demorewind (Baker Fitzquake Mark V)
+		return 0;
+
+	if (cls.signon < SIGNONS)	// clear stuffs if new demo 
+		while (dem_framepos)
+			EraseTopEntry(); // end woods #demorewind (Baker Fitzquake Mark V)
 
 	// decide if it is time to grab the next message
 	if (cls.signon == SIGNONS)	// always grab until fully connected
@@ -103,13 +149,28 @@ static int CL_GetDemoMessage (void)
 			if (host_framecount == cls.td_startframe + 1)
 				cls.td_starttime = realtime;
 		}
-		else if (/* cl.time > 0 && */ cl.time <= cl.mtime[0])
-		{
-			return 0;	// don't need another message yet
-		}
+
+		else if (!cls.demorewind && cl.ctime <= cl.mtime[0]) // woods #demorewind (Baker Fitzquake Mark V)
+			return 0;		// don't need another message yet
+		else if (cls.demorewind && cl.ctime >= cl.mtime[0])
+			return 0;
+
+		// joe: fill in the stack of frames' positions
+		// enable on intermission or not...?
+		// NOTE: it can't handle fixed intermission views!
+		if (!cls.demorewind /*&& !cl.intermission*/)
+			PushFrameposEntry(ftell(cls.demofile)); 
+
+	//	else if (/* cl.time > 0 && */ cl.time <= cl.mtime[0])
+	//	{
+	//		return 0;	// don't need another message yet
+	//	} // end woods #demorewind (Baker Fitzquake Mark V)
 	}
 
 // get the next message
+
+	cls.demo_offset_current = ftell(cls.demofile); // woods #demopercent (Baker Fitzquake Mark V)
+
 	fread (&net_message.cursize, 4, 1, cls.demofile);
 	VectorCopy (cl.mviewangles[0], cl.mviewangles[1]);
 	for (i = 0 ; i < 3 ; i++)
@@ -126,6 +187,19 @@ static int CL_GetDemoMessage (void)
 	{
 		CL_StopPlayback ();
 		return 0;
+	}
+
+	// woods #demorewind (Baker Fitzquake Mark V)
+	// joe: get out framestack's top entry
+	if (cls.demorewind /*&& !cl.intermission*/)
+	{
+		if (dem_framepos/* && dem_framepos->baz*/)	// Baker: in theory, if this occurs we ARE at the start of the demo with demo rewind on
+		{
+			fseek(cls.demofile, dem_framepos->baz, SEEK_SET);
+			EraseTopEntry(); // Baker: we might be able to improve this better but not right now.
+		}
+		if (!dem_framepos)
+			bumper_on = start_of_demo = true;
 	}
 
 	return 1;
@@ -193,7 +267,7 @@ void CL_Stop_f (void)
 	fclose (cls.demofile);
 	cls.demofile = NULL;
 	cls.demorecording = false;
-	Con_Printf ("Completed demo\n");
+	Con_Printf ("completed demo\n");
 
 	Cvar_SetROM(cl_recordingdemo.name, "");
 	
@@ -430,7 +504,7 @@ void CL_Record_Spawn(void)
 
 /*
 ====================
-CL_Record_f
+CL_Record_f -- -- woods changed alot: removed cd track, and map selections (just use autodemo) | sourced from Qrack #autodemo
 
 record <demoname> <map> [cd track]
 ====================
@@ -450,71 +524,101 @@ void CL_Record_f (void)
 		return;
 	}
 
+	c = Cmd_Argc();
+	if (c > 3)
+	{
+		Con_Printf("record or record <demoname> [<map>]\n");
+		return;
+	}
+
+	if (c == 1 || c == 2)
+	{
+		if (c == 1)
+		{
+			// woods added time for demo output
+			char str[24];
+			time_t systime = time(0);
+			struct tm loct =*localtime(&systime);
+
+			q_snprintf(name, sizeof(name), "%s/demos", com_gamedir); //  create demos folder if not there
+			Sys_mkdir(name); 
+
+			strftime(str, 24, "%m-%d-%Y-%H%M%S", &loct);
+			q_snprintf(name, sizeof(name), "%s/demos/%s_%s", com_gamedir, cl.mapname, str);  // woods added demos folder, added args for demo output info
+		}
+		else if (c == 2)
+		{
+			if (strstr(Cmd_Argv(1), ".."))
+			{
+				Con_Printf("Relative pathnames are not allowed.\n");
+				return;
+			}
+
+			if (c == 2 && cls.state == ca_connected)
+			{
+#if 0
+				Con_Printf("Can not record - already connected to server\nClient demo recording must be started before connecting\n");
+				return;
+#endif
+				if (cls.signon < 2)
+				{
+					Con_Printf("Can't record - try again when connected\n");
+					return;
+				}
+				switch (cl.protocol)
+				{
+				case PROTOCOL_NETQUAKE:
+				case PROTOCOL_FITZQUAKE:
+				case PROTOCOL_RMQ:
+				case PROTOCOL_VERSION_BJP3:
+					break;
+					//case PROTOCOL_VERSION_NEHD:
+					//case PROTOCOL_VERSION_DP5:
+					//case PROTOCOL_VERSION_DP6:
+				case PROTOCOL_VERSION_DP7:
+					//case PROTOCOL_VERSION_BJP1:
+					//case PROTOCOL_VERSION_BJP2:
+				default:
+					Con_Printf("Can not record - protocol not supported for recording mid-map\nClient demo recording must be started before connecting\n");
+					return;
+				}
+			}
+
+		}
+	}
+
 	if (cls.demorecording)
 		CL_Stop_f();
 
-	c = Cmd_Argc();
-	if (c != 2 && c != 3 && c != 4)
-	{
-		Con_Printf ("record <demoname> [<map> [cd track]]\n");
-		return;
-	}
-
-	if (strstr(Cmd_Argv(1), ".."))
-	{
-		Con_Printf ("Relative pathnames are not allowed.\n");
-		return;
-	}
-
-	if (c == 2 && cls.state == ca_connected)
-	{
-#if 0
-		Con_Printf("Can not record - already connected to server\nClient demo recording must be started before connecting\n");
-		return;
-#endif
-		if (cls.signon < 2)
-		{
-			Con_Printf("Can't record - try again when connected\n");
-			return;
-		}
-		switch(cl.protocol)
-		{
-		case PROTOCOL_NETQUAKE:
-		case PROTOCOL_FITZQUAKE:
-		case PROTOCOL_RMQ:
-		case PROTOCOL_VERSION_BJP3:
-			break;
-		//case PROTOCOL_VERSION_NEHD:
-		//case PROTOCOL_VERSION_DP5:
-		//case PROTOCOL_VERSION_DP6:
-		case PROTOCOL_VERSION_DP7:
-		//case PROTOCOL_VERSION_BJP1:
-		//case PROTOCOL_VERSION_BJP2:
-		default:
-			Con_Printf("Can not record - protocol not supported for recording mid-map\nClient demo recording must be started before connecting\n");
-			return;
-		}
-	}
-
-// write the forced cd track number, or -1
+	// write the forced cd track number, or -1
 	if (c == 4)
 	{
 		track = atoi(Cmd_Argv(3));
-		Con_Printf ("Forcing CD track to %i\n", cls.forcetrack);
+		Con_Printf("Forcing CD track to %i\n", cls.forcetrack);
 	}
 	else
 	{
 		track = -1;
 	}
 
-	q_snprintf (name, sizeof(name), "%s/%s", com_gamedir, Cmd_Argv(1));
+	if (c == 2)
+	{
+		q_snprintf(name, sizeof(name), "%s/demos", com_gamedir); //  create demos folder if not there
+		Sys_mkdir(name);
+		q_snprintf(name, sizeof(name), "%s/demos/%s", com_gamedir, Cmd_Argv(1));  // added demos
 
-// start the map up
+	}
+
+	// start the map up
 	if (c > 2)
 	{
-		Cmd_ExecuteString ( va("map %s", Cmd_Argv(2)), src_command);
-		if (cls.state != ca_connected)
-			return;
+		//Cmd_ExecuteString(va("map %s", Cmd_Argv(2)), src_command);
+		//if (cls.state != ca_connected)
+			//return;
+
+		Con_Printf("enable autodemo to record at map start\n");
+		return;
+
 	}
 
 // open the demo file
@@ -522,7 +626,7 @@ void CL_Record_f (void)
 
 	Cvar_SetROM(cl_recordingdemo.name, name);
 
-	Con_Printf ("recording to %s.\n", name);
+	Con_Printf ("demo recording\n");
 	cls.demofile = fopen (name, "wb");
 	if (!cls.demofile)
 	{
@@ -537,7 +641,7 @@ void CL_Record_f (void)
 	cls.demorecording = true;
 
 	// from ProQuake: initialize the demo file if we're already connected
-	if (c == 2 && cls.state == ca_connected)
+	if (c < 3 && cls.state == ca_connected)
 	{
 		byte *data = net_message.data;
 		int cursize = net_message.cursize;
@@ -566,7 +670,7 @@ play [demoname]
 */
 void CL_PlayDemo_f (void)
 {
-	char	name[MAX_OSPATH];
+	char	name[MAX_OSPATH], name2[MAX_OSPATH]; // woods #demosfolder
 
 	if (cmd_source != src_command)
 		return;
@@ -578,22 +682,43 @@ void CL_PlayDemo_f (void)
 	}
 
 // disconnect from server
-	CL_Disconnect ();
+	CL_Disconnect (); // woods #demorewind (Baker Fitzquake Mark V)
+
+	// Revert
+	cls.demorewind = false;
+	cls.demospeed = 0; // 0 = Don't use
+	bumper_on = false;
 
 // open the demo file
 	q_strlcpy (name, Cmd_Argv(1), sizeof(name));
 	COM_AddExtension (name, ".dem", sizeof(name));
 
-	Con_Printf ("Playing demo from %s.\n", name);
+	q_snprintf(name2, sizeof(name2), "demos/%s", name); // woods #demosfolder
 
-	COM_FOpenFile (name, &cls.demofile, NULL);
+	Con_Printf ("Playing demo from %s.\n", name2); // woods #demosfolder
+
+	COM_FOpenFile (name2, &cls.demofile, NULL); // check demos folder
+
+	if (!cls.demofile)
+		COM_FOpenFile(name, &cls.demofile, NULL); // check gamedir too
+
 	if (!cls.demofile)
 	{
-		Con_Printf ("ERROR: couldn't open %s\n", name);
+		Con_Printf ("ERROR: couldn't open %s\n", name); // woods #demosfolder
 		cls.demonum = -1;	// stop demo loop
 		return;
 	}
 
+	// woods #demopercent (Baker Fitzquake Mark V)
+
+	strcpy(cls.demoname, name); 
+	cls.demo_offset_start = ftell(cls.demofile);	// qfs_lastload.offset instead?
+	cls.demo_file_length = com_filesize;
+	cls.demo_hosttime_start = cls.demo_hosttime_elapsed = 0; // Fill this in ... host_time;
+	cls.demo_cltime_start = cls.demo_cltime_elapsed = 0; // Fill this in
+
+	// end #demopercent (Baker Fitzquake Mark V)
+	// 
 // ZOID, fscanf is evil
 // O.S.: if a space character e.g. 0x20 (' ') follows '\n',
 // fscanf skips that byte too and screws up further reads.

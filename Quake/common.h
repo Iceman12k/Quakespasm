@@ -173,6 +173,8 @@ extern char *q_strupr (char *str);
 extern int q_snprintf (char *str, size_t size, const char *format, ...) FUNC_PRINTF(3,4);
 extern int q_vsnprintf(char *str, size_t size, const char *format, va_list args) FUNC_PRINTF(3,0);
 
+extern char* Q_strrev (char* s); // woods
+
 #define strcasecmp brokeninmsvc
 #define stricmp brokenportability
 #define strncasecmp brokeninmsvc

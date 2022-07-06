@@ -60,14 +60,16 @@ mleaf_t		*r_viewleaf, *r_oldviewleaf;
 
 int		d_lightstylevalue[MAX_LIGHTSTYLES];	// 8.8 fraction of base light value
 
+cvar_t	cl_damagehue = {"cl_damagehue", "1",CVAR_ARCHIVE};  // woods #damage
+cvar_t	cl_autodemo = {"cl_autodemo","0",CVAR_ARCHIVE};	//R00k   // woods #autodemo
 
 cvar_t	r_norefresh = {"r_norefresh","0",CVAR_NONE};
 cvar_t	r_drawentities = {"r_drawentities","1",CVAR_NONE};
-cvar_t	r_drawviewmodel = {"r_drawviewmodel","1",CVAR_NONE};
+cvar_t	r_drawviewmodel = {"r_drawviewmodel","1",CVAR_ARCHIVE};
 cvar_t	r_speeds = {"r_speeds","0",CVAR_NONE};
 cvar_t	r_pos = {"r_pos","0",CVAR_NONE};
 cvar_t	r_fullbright = {"r_fullbright","0",CVAR_NONE};
-cvar_t	r_lightmap = {"r_lightmap","0",CVAR_NONE};
+cvar_t	r_lightmap = {"r_lightmap","0",CVAR_ARCHIVE};
 cvar_t	r_shadows = {"r_shadows","0",CVAR_ARCHIVE};
 cvar_t	r_wateralpha = {"r_wateralpha","1",CVAR_ARCHIVE};
 cvar_t	r_dynamic = {"r_dynamic","1",CVAR_ARCHIVE};
@@ -78,7 +80,7 @@ cvar_t	gl_clear = {"gl_clear","1",CVAR_NONE};
 cvar_t	gl_cull = {"gl_cull","1",CVAR_NONE};
 cvar_t	gl_smoothmodels = {"gl_smoothmodels","1",CVAR_NONE};
 cvar_t	gl_affinemodels = {"gl_affinemodels","0",CVAR_NONE};
-cvar_t	gl_polyblend = {"gl_polyblend","1",CVAR_NONE};
+cvar_t	gl_polyblend = {"gl_polyblend","1",CVAR_ARCHIVE};
 cvar_t	gl_flashblend = {"gl_flashblend","0",CVAR_ARCHIVE};
 cvar_t	gl_playermip = {"gl_playermip","0",CVAR_NONE};
 cvar_t	gl_nocolors = {"gl_nocolors","0",CVAR_NONE};
@@ -99,17 +101,17 @@ cvar_t	r_showtris = {"r_showtris", "0", CVAR_NONE};
 cvar_t	r_showbboxes = {"r_showbboxes", "0", CVAR_NONE};
 cvar_t	r_lerpmodels = {"r_lerpmodels", "1", CVAR_ARCHIVE};
 cvar_t	r_lerpmove = {"r_lerpmove", "1", CVAR_ARCHIVE};
-cvar_t	r_nolerp_list = {"r_nolerp_list", "progs/flame.mdl,progs/flame2.mdl,progs/braztall.mdl,progs/brazshrt.mdl,progs/longtrch.mdl,progs/flame_pyre.mdl,progs/v_saw.mdl,progs/v_xfist.mdl,progs/h2stuff/newfire.mdl", CVAR_NONE};
-cvar_t	r_noshadow_list = {"r_noshadow_list", "progs/flame2.mdl,progs/flame.mdl,progs/bolt1.mdl,progs/bolt2.mdl,progs/bolt3.mdl,progs/laser.mdl", CVAR_NONE};
+cvar_t	r_nolerp_list = {"r_nolerp_list", "progs/flame.mdl,progs/flame2.mdl,progs/braztall.mdl,progs/brazshrt.mdl,progs/longtrch.mdl,progs/flame_pyre.mdl,progs/v_saw.mdl,progs/v_xfist.mdl,progs/h2stuff/newfire.mdl", CVAR_ARCHIVE};
+cvar_t	r_noshadow_list = {"r_noshadow_list", "progs/flame2.mdl,progs/flame.mdl,progs/bolt1.mdl,progs/bolt2.mdl,progs/bolt3.mdl,progs/laser.mdl", CVAR_ARCHIVE};
 
 extern cvar_t	r_vfog;
 //johnfitz
 
 cvar_t	gl_zfix = {"gl_zfix", "0", CVAR_NONE}; // QuakeSpasm z-fighting fix
 
-cvar_t	r_lavaalpha = {"r_lavaalpha","0",CVAR_NONE};
-cvar_t	r_telealpha = {"r_telealpha","0",CVAR_NONE};
-cvar_t	r_slimealpha = {"r_slimealpha","0",CVAR_NONE};
+cvar_t	r_lavaalpha = {"r_lavaalpha","0",CVAR_ARCHIVE};
+cvar_t	r_telealpha = {"r_telealpha","0",CVAR_ARCHIVE};
+cvar_t	r_slimealpha = {"r_slimealpha","0",CVAR_ARCHIVE};
 
 float	map_wateralpha, map_lavaalpha, map_telealpha, map_slimealpha;
 float	map_fallbackalpha;
@@ -629,7 +631,7 @@ void R_SetupView (void)
 	//johnfitz -- cheat-protect some draw modes
 	r_drawflat_cheatsafe = r_fullbright_cheatsafe = r_lightmap_cheatsafe = false;
 	r_drawworld_cheatsafe = r_refdef.drawworld;
-	if (cl.maxclients == 1 && r_refdef.drawworld)
+	if (cl.maxclients >= 1 && r_refdef.drawworld) // woods #textureless > 1 up to 16 for online play
 	{
 		if (!r_drawworld.value) r_drawworld_cheatsafe = false;
 
@@ -705,7 +707,14 @@ void R_DrawViewModel (void)
 {
 	if (!r_drawviewmodel.value || !r_drawentities.value || chase_active.value || skyroom_drawing/*silly depthrange*/)
 		return;
-
+	
+	if (cl.gametype == GAME_DEATHMATCH) // woods MH for eyes weapon trans (MHQuakeSpasm)
+	{
+		if (cl.stats[STAT_HEALTH] <= 0)
+			return;
+	}
+	
+	else
 	if (cl.items & IT_INVISIBILITY || cl.stats[STAT_HEALTH] <= 0)
 		return;
 
@@ -717,6 +726,21 @@ void R_DrawViewModel (void)
 	if (currententity->model->type != mod_alias)
 		return;
 	//johnfitz
+
+	// woods, MH code for eyes weapon trans (MHQuakeSpasm)
+	
+	// interacts with SU_WEAPONALPHA bit in CL_ParseClientdata; this is overwritten/reset each frame so we don't need to cache & restore it
+	if (cl.gametype == GAME_DEATHMATCH)
+	{
+		if (currententity->alpha != ENTALPHA_DEFAULT)
+		; // server has sent alpha for the viewmodel so never override it
+		else if (cl.items & IT_INVISIBILITY)
+
+			currententity->alpha = ENTALPHA_ENCODE(0.50);  // woods show damage taken in alias model
+		else currententity->alpha = ENTALPHA_DEFAULT;
+	}
+
+	// end woods, MH code for eyes weapon trans
 
 	// hack the depth range to prevent view model from poking into walls
 	glDepthRange (0, 0.3);
@@ -925,7 +949,7 @@ void R_DrawShadows (void)
 {
 	int i;
 
-	if (!r_shadows.value || !r_drawentities.value || r_drawflat_cheatsafe || r_lightmap_cheatsafe)
+	if (!r_shadows.value || !r_drawentities.value || r_drawflat_cheatsafe/* || r_lightmap_cheatsafe*/) // woods #textureless keep shadows
 		return;
 
 	// Use stencil buffer to prevent self-intersecting shadows, from Baker (MarkV)
@@ -1245,7 +1269,7 @@ void R_RenderView (void)
 	//Spike: flag whether the skyroom was actually visible, so we don't needlessly draw it when its not (1 frame's lag, hopefully not too noticable)
 	if (r_refdef.drawworld)
 	{
-		if (r_viewleaf->contents == CONTENTS_SOLID || r_drawflat_cheatsafe || r_lightmap_cheatsafe)
+		if (r_viewleaf->contents == CONTENTS_SOLID || r_drawflat_cheatsafe/* || r_lightmap_cheatsafe*/)  // woods #textureless to keep sky
 			skyroom_visible = false;	//don't do skyrooms when the view is in the void, for framerate reasons while debugging.
 		else
 			skyroom_visible = R_SkyroomWasVisible();

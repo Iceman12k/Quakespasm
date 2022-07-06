@@ -23,6 +23,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 // screen.c -- master for refresh, status bar, console, chat, notify, etc
 
+#include "time.h"
 #include "quakedef.h"
 
 /*
@@ -74,23 +75,44 @@ console is:
 
 int			glx, gly, glwidth, glheight;
 
+int ct; // woods connected map time #maptime
+
 float		scr_con_current;
 float		scr_conlines;		// lines of console to display
+
+void Sbar_SortFrags(void); // woods #scrping
+void Sbar_SortTeamFrags(void); // woods #matchhud
+int	Sbar_ColorForMap(int m); // woods #matchhud
+void Sbar_DrawCharacter(int x, int y, int num); // woods #matchhud
+void Sbar_SortFrags_Obs(void); // woods #observerhud
+void Sound_Toggle_Mute_On_f(void); // woods #usermute -- adapted from Fitzquake Mark V
 
 //johnfitz -- new cvars
 cvar_t		scr_menuscale = {"scr_menuscale", "1", CVAR_ARCHIVE};
 cvar_t		scr_sbarscale = {"scr_sbarscale", "1", CVAR_ARCHIVE};
 cvar_t		scr_sbaralpha = {"scr_sbaralpha", "0.75", CVAR_ARCHIVE};
+cvar_t		scr_sbar = {"scr_sbar", "1", CVAR_ARCHIVE}; // woods #sbarstyles
 cvar_t		scr_conwidth = {"scr_conwidth", "0", CVAR_ARCHIVE};
 cvar_t		scr_conscale = {"scr_conscale", "1", CVAR_ARCHIVE};
+cvar_t		scr_consize = {"scr_consize", ".5", CVAR_ARCHIVE}; // woods #consize (joequake)
 cvar_t		scr_crosshairscale = {"scr_crosshairscale", "1", CVAR_ARCHIVE};
-cvar_t		scr_showfps = {"scr_showfps", "0", CVAR_NONE};
-cvar_t		scr_clock = {"scr_clock", "0", CVAR_NONE};
+cvar_t		scr_crosshaircolor = {"scr_crosshaircolor", "0", CVAR_ARCHIVE}; // woods #crosshair
+cvar_t		scr_showfps = {"scr_showfps", "0", CVAR_ARCHIVE};
+cvar_t		scr_clock = {"scr_clock", "0", CVAR_ARCHIVE};
+cvar_t		scr_ping = {"scr_ping", "1", CVAR_ARCHIVE};  // woods #scrping
+cvar_t		scr_match_hud = {"scr_match_hud", "1", CVAR_ARCHIVE};  // woods #matchhud
+cvar_t		scr_showspeed = {"scr_showspeed", "0",CVAR_ARCHIVE}; // woods #speed
+cvar_t		scr_matchclock = {"scr_matchclock", "0",CVAR_ARCHIVE}; // woods #varmatchclock
+cvar_t		scr_matchclock_y = {"scr_matchclock_y", "0",CVAR_ARCHIVE}; // woods #varmatchclock
+cvar_t		scr_matchclock_x = {"scr_matchclock_x", "0",CVAR_ARCHIVE}; // woods #varmatchclock
+cvar_t		scr_matchclockscale = {"scr_matchclockscale", "1",CVAR_ARCHIVE}; // woods #varmatchclock
+cvar_t		scr_showscores = {"scr_showscores", "0",CVAR_ARCHIVE}; // woods #observerhud
+cvar_t		scr_shownet = {"scr_shownet", "0",CVAR_ARCHIVE}; // woods #shownet
 //johnfitz
 cvar_t		scr_usekfont = {"scr_usekfont", "0", CVAR_NONE}; // 2021 re-release
 
 cvar_t		scr_viewsize = {"viewsize","100", CVAR_ARCHIVE};
-cvar_t		scr_fov = {"fov","90",CVAR_NONE};	// 10 - 170
+cvar_t		scr_fov = {"fov","90",CVAR_ARCHIVE};	// 10 - 170
 cvar_t		scr_fov_adapt = {"fov_adapt","1",CVAR_ARCHIVE};
 cvar_t		scr_conspeed = {"scr_conspeed","500",CVAR_ARCHIVE};
 cvar_t		scr_centertime = {"scr_centertime","2",CVAR_NONE};
@@ -109,6 +131,8 @@ qboolean	scr_initialized;		// ready to draw
 qpic_t		*scr_ram;
 qpic_t		*scr_net;
 qpic_t		*scr_turtle;
+
+void Sbar_DrawPicAlpha(int x, int y, qpic_t* pic, float alpha); // woods for loading #flagstatus alpha
 
 int			clearconsole;
 int			clearnotify;
@@ -142,6 +166,8 @@ int			scr_erase_center;
 #define CPRINT_TALIGN		(1u<<2)
 unsigned int scr_centerprint_flags;
 
+int paused = 0; // woods #showpaused
+
 /*
 ==============
 SCR_CenterPrint
@@ -153,6 +179,66 @@ for a few moments
 void SCR_CenterPrint (const char *str) //update centerprint data
 {
 	unsigned int flags = 0;
+
+	if (strstr(str, "ÐÁÕÓÅÄ")) // #showpaused
+	{
+		paused = 1;
+		return;
+	}
+	else
+		paused = 0;
+
+// ===============================
+// woods for center print filter  -> this is #flagstatus
+// ===============================
+
+// begin woods for flagstatus parsing --  â = blue abandoned, ò = red abandoned, r = taken, b = taken
+
+	strncpy(cl.flagstatus, "n", sizeof(cl.flagstatus)); // null flag, reset all flag ... flags :)
+
+	if (!strpbrk(str, "€")) // cdmod MOD print
+	{
+		// RED
+
+		if (strstr(str, "rž") && !strstr(str, "bŸ") && !strstr(str, "âŸ")) // red taken
+			strncpy(cl.flagstatus, "r", sizeof(cl.flagstatus));
+
+		if (strstr(str, "òž") && !strstr(str, "bŸ") && !strstr(str, "âŸ")) // red abandoned
+			strncpy(cl.flagstatus, "x", sizeof(cl.flagstatus));
+
+	// BLUE
+
+		if (strstr(str, "bŸ") && !strstr(str, "rž") && !strstr(str, "òž")) // blue taken
+			strncpy(cl.flagstatus, "b", sizeof(cl.flagstatus));
+
+		if (strstr(str, "âŸ") && !strstr(str, "rž") && !strstr(str, "òž")) // blue abandoned
+			strncpy(cl.flagstatus, "y", sizeof(cl.flagstatus));
+
+	// RED & BLUE
+
+		if ((strstr(str, "bŸ")) && (strstr(str, "rž"))) //  blue & red taken
+			strncpy(cl.flagstatus, "p", sizeof(cl.flagstatus));
+
+		if ((strstr(str, "âŸ")) && (strstr(str, "òž"))) // blue & red abandoned
+			strncpy(cl.flagstatus, "z", sizeof(cl.flagstatus));
+
+		if ((strstr(str, "âŸ")) && (strstr(str, "rž"))) // blue abandoned, red taken
+			strncpy(cl.flagstatus, "j", sizeof(cl.flagstatus));
+
+		if ((strstr(str, "bŸ")) && (strstr(str, "òž"))) // red abandoned, blue taken
+			strncpy(cl.flagstatus, "k", sizeof(cl.flagstatus));
+	}
+
+	// end woods for flagstatus parsing
+
+	if (!strcmp(str, "You found a secret area!") || // woods remove these
+		!strcmp(str, "Your team captured the flag!\n") ||
+		!strcmp(str, "Your flag was captured!\n") ||
+		!strcmp(str, "Enemy æìáç has been returned to base!") ||
+		!strcmp(str, "Your ÆÌÁÇ has been taken!") ||
+		!strcmp(str, "Your team has the enemy ÆÌÁÇ!") ||
+		!strcmp(str, "Your æìáç has been returned to base!"))
+		return;
 
 	if (*str != '/' && cl.intermission)
 		flags |= CPRINT_TYPEWRITER | CPRINT_PERSIST | CPRINT_TALIGN;
@@ -252,7 +338,13 @@ void SCR_DrawCenterString (void) //actually do the drawing
 	int		x, y;
 	int		remaining;
 
-	GL_SetCanvas (CANVAS_MENU); //johnfitz
+	if (sb_showscores == true && (cl.gametype == GAME_DEATHMATCH && cls.state == ca_connected)) // woods don't overlap centerprints with scoreboard
+		return;
+
+	if (!strcmp(cl.observer, "y") && (cl.modtype >= 2)) // woods #observer
+		GL_SetCanvas(CANVAS_OBSERVER); //johnfitz //  center print moved down near weapon
+	else
+		GL_SetCanvas(CANVAS_MOD); //johnfitz // woods messages scale with console font size instead
 
 // the finale prints the characters one at a time
 	if (cl.intermission)
@@ -488,13 +580,25 @@ void SCR_Init (void)
 	Cvar_RegisterVariable (&scr_sbarscale);
 	Cvar_SetCallback (&scr_sbaralpha, SCR_Callback_refdef);
 	Cvar_RegisterVariable (&scr_sbaralpha);
+	Cvar_RegisterVariable (&scr_sbar); // woods #sbarstyles
 	Cvar_SetCallback (&scr_conwidth, &SCR_Conwidth_f);
 	Cvar_SetCallback (&scr_conscale, &SCR_Conwidth_f);
 	Cvar_RegisterVariable (&scr_conwidth);
 	Cvar_RegisterVariable (&scr_conscale);
+	Cvar_RegisterVariable (&scr_consize); // woods #consize (joequake)
 	Cvar_RegisterVariable (&scr_crosshairscale);
+	Cvar_RegisterVariable (&scr_crosshaircolor); // woods #crosshair
 	Cvar_RegisterVariable (&scr_showfps);
 	Cvar_RegisterVariable (&scr_clock);
+	Cvar_RegisterVariable (&scr_ping); // woods #scrping
+	Cvar_RegisterVariable(&scr_match_hud); // woods #matchhud
+	Cvar_RegisterVariable (&scr_showspeed); // woods #speed
+	Cvar_RegisterVariable (&scr_matchclock); // woods #varmatchclock
+	Cvar_RegisterVariable (&scr_matchclock_y); // woods #varmatchclock
+	Cvar_RegisterVariable (&scr_matchclock_x); // woods #varmatchclock
+	Cvar_RegisterVariable (&scr_matchclockscale); // woods #varmatchclock
+	Cvar_RegisterVariable (&scr_showscores); // woods #observerhud
+	Cvar_RegisterVariable (&scr_shownet); // woods #shownet
 	//johnfitz
 	Cvar_RegisterVariable (&scr_usekfont); // 2021 re-release
 	Cvar_SetCallback (&scr_fov, SCR_Callback_refdef);
@@ -556,11 +660,14 @@ void SCR_DrawFPS (void)
 	if (scr_showfps.value)
 	{
 		char	st[16];
+		char	st2[16]; // woods #f_config
 		int	x, y;
 		sprintf (st, "%4.0f fps", lastfps);
-		x = 320 - (strlen(st)<<3);
-		y = 200 - 8;
-		if (scr_clock.value) y -= 8; //make room for clock
+		sprintf (st2, "%4.0f", lastfps); // woods #f_config
+		cl.fps = atoi(st2); // woods #f_config
+		x = 312 - (strlen(st)<<3); // woods added padding
+		y = 200 - 14; // woods added padding
+		if (scr_clock.value) y -= 12; //make room for clock // woods added padding
 		GL_SetCanvas (CANVAS_BOTTOMRIGHT);
 		Draw_String (x, y, st);
 		scr_tileclear_updates = 0;
@@ -585,14 +692,536 @@ void SCR_DrawClock (void)
 
 		sprintf (str,"%i:%i%i", minutes, seconds/10, seconds%10);
 	}
+
+	else if (scr_clock.value == 2)
+	{
+		time_t systime = time(0);
+		struct tm loct =*localtime(&systime);
+
+		strftime(str, 12, "%I:%M %p", &loct);
+	}
+
+	else if (scr_clock.value == 3)
+	{
+		time_t systime = time(0);
+		struct tm loct =*localtime(&systime);
+
+		strftime(str, 12, "%X", &loct);
+	}
+
 	else
 		return;
 
 	//draw it
 	GL_SetCanvas (CANVAS_BOTTOMRIGHT);
-	Draw_String (320 - (strlen(str)<<3), 200 - 8, str);
+	Draw_String(312 - (strlen(str) << 3), 200 - 14, str); // woods added padding
 
 	scr_tileclear_updates = 0;
+}
+
+/*
+==================
+SCR_Show_Ping -- added by woods #scrping
+==================
+*/
+void SCR_ShowPing(void)
+{
+	int	i, k, l;
+	int	x, y;
+	char	num[12];
+	scoreboard_t* s;
+
+	ct = cl.time - cl.maptime; // woods connected map time #maptime
+
+	if (cl.gametype == GAME_DEATHMATCH && cls.state == ca_connected) {
+
+		if (scr_ping.value) {
+
+			GL_SetCanvas (CANVAS_BOTTOMLEFT2); //johnfitz woods 9/2/2021
+
+			Sbar_SortFrags ();
+
+			// draw the text
+			l = scoreboardlines;
+
+			x = 46; //johnfitz -- simplified becuase some positioning is handled elsewhere
+			y = 20;
+			for (i = 0; i < l; i++)
+			{
+				k = fragsort[i];
+				s = &cl.scores[k];
+				if (!s->name[0])
+					continue;
+
+				if (fragsort[i] == cl.viewentity - 1) {
+
+					sprintf (num, "%-4i", s->ping);
+
+					if (ct > 5 && !scr_con_current) // dont update when console down or report ping 0
+						M_PrintWhite (x - 8 * 5, y, num); //johnfitz -- was Draw_String, changed for stretched overlays 
+				}
+			}
+
+			if (key_dest != key_console && (cls.signon >= SIGNONS)) // dont update when console down or not fully connected
+
+				if (!cls.message.cursize && cl.expectingpingtimes < realtime)
+				{
+					cl.expectingpingtimes = realtime + 5;   // update frequency
+					MSG_WriteByte(&cls.message, clc_stringcmd);
+					MSG_WriteString(&cls.message, "ping");
+				}
+		}
+	}
+
+}
+
+/*
+==================
+SCR_ShowPL -- added by woods #scrpl
+==================
+*/
+void SCR_ShowPL(void)
+{
+	int pl;
+	char			num[12];
+
+	ct = cl.time - cl.maptime; // woods connected map time #maptime
+
+	if (cl.gametype == GAME_DEATHMATCH && cls.state == ca_connected) {
+
+		pl = atoi(cl.scrpacketloss); // convert string to integer
+
+		GL_SetCanvas(CANVAS_BOTTOMLEFT2);
+
+		int	y;
+		if (scr_ping.value)
+			y = 8; //make room for ping if enabled
+		else
+			y = 20;
+
+
+		if (cl.expectingpltimes < realtime)
+		{
+			cl.expectingpltimes = realtime + 5;   // update frequency
+			Cmd_ExecuteString("pl\n", src_command);
+
+		}
+
+		if (key_dest != key_console && ((ct != (int)cl.time) && (ct > 6)))
+		{
+			if (pl > 0) // color red
+			{
+				sprintf(num, "%-4i", pl);
+				M_Print(6, y, num);
+			}
+		}
+	}
+}
+
+/*====================
+SCR_DrawMatchClock    woods (Adapted from Sbar_DrawFrags from r00k) draw match clock upper right corner #matchhud
+====================
+*/
+void SCR_DrawMatchClock(void)
+{
+	char			num[22] = "empty";
+	int				teamscores, minutes, seconds;
+	int				match_time, tl;
+
+	match_time = ceil(60.0 * cl.minutes + cl.seconds - (cl.time - cl.last_match_time));
+	minutes = match_time / 60;
+	seconds = match_time - 60 * minutes;
+	teamscores = cl.teamgame;
+
+	GL_SetCanvas(CANVAS_TOPRIGHT2);
+
+	if ((teamscores) && !(cl.minutes != 255)) // display 0.00 for pre match mode in DM
+	{
+		sprintf(num, "%3d:%02d", 0, 0);
+		Draw_String(((314 - (strlen(num) << 3)) + 1), 195 - 8, num);
+	}
+
+	if ((cl.minutes != 255))
+	{
+		if (!strcmp(cl.ffa, "y")) // display count up to timelimit in normal/ffa mode
+		{
+			
+			minutes = cl.time / 60;
+			seconds = cl.time - 60 * minutes;
+			minutes = minutes & 511;
+			sprintf(num, "%3d:%02d", minutes, seconds);
+		}
+
+		if (teamscores) // display timelimit if we can get it if there is a team
+		{
+			if (strlen(cl.serverinfo) > 0) // fte/qss server check, if so parse serverinfo for timelimit
+			{
+				char mtimelimit[10];
+				char* str = cl.serverinfo;
+				char* position_ptr = strstr(str, "timelimit\\");
+				int position = (position_ptr - str);
+				strncpy(mtimelimit, str + position + 10, 3);
+				tl = atoi(mtimelimit);
+			}
+			else
+				tl = 0; // if no timelimit available, set clock to 0:00
+
+			sprintf(num, "%3d:%02d", tl, 0);
+		}
+
+		if (cl.minutes || cl.seconds) // counter is rolling
+		{
+			if (cl.match_pause_time)
+				match_time = ceil(60.0 * cl.minutes + cl.seconds - (cl.match_pause_time - cl.last_match_time));
+			else
+				match_time = ceil(60.0 * cl.minutes + cl.seconds - (cl.time - cl.last_match_time));
+			minutes = match_time / 60;
+			seconds = match_time - 60 * minutes;
+			sprintf(num, "%3d:%02d", minutes, seconds);
+		}
+
+		if (cl.seconds >= 128) // DM CRMOD 6.6 countdown, second count inaccurate in countdown, fix it
+			sprintf(num, " 0:%02d", cl.seconds - 128);
+
+		// now lets draw the clocks
+
+		if (!strcmp(num, "empty"))
+			return;
+
+		if (scr_match_hud.value)
+		{
+			if ((((minutes <= 0) && (seconds < 15) && (seconds > 0)) && !(!strcmp(cl.ffa, "y"))) || cl.seconds >= 128) // color last 15 seconds to draw attention cl.seconds >= 128 is for CRMOD
+				M_Print(((314 - (strlen(num) << 3)) + 1), 195 - 8, num); // M_Print is colored text
+			else
+				Draw_String(((314 - (strlen(num) << 3)) + 1), 195 - 8, num);
+		}
+
+		if (scr_matchclock.value) // woods #varmatchclock draw variable clock where players wants based on their x, y cvar
+		{
+			if (sb_showscores == false && (cl.gametype == GAME_DEATHMATCH && cls.state == ca_connected)) // woods don't overlap crosshair with scoreboard
+			{
+				GL_SetCanvas(CANVAS_MATCHCLOCK);
+				if ((((minutes <= 0) && (seconds < 15) && (seconds > 0)) && !(!strcmp(cl.ffa, "y"))) || cl.seconds >= 128) // color last 15 seconds to draw attention cl.seconds >= 128 is for CRMOD
+					M_Print(scr_matchclock_x.value, scr_matchclock_y.value, num); // M_Print is colored text
+				else
+					Draw_String(scr_matchclock_x.value, scr_matchclock_y.value, num);
+			}
+		}
+	}
+}
+
+/*====================
+SCR_DrawMatchScores   -- woods  (Adapted from Sbar_DrawFrags from r00k) -- draw match scores upper right corner #matchhud
+====================++
+*/
+void SCR_DrawMatchScores(void)
+{
+	int				i, k, l;
+	int				top, bottom;
+	int				x, y, f;
+	char			num[12];
+	int				teamscores, colors;// JPG - added these
+
+	// JPG - check to see if we should sort teamscores instead
+	teamscores = /*pq_teamscores.value && */cl.teamgame;
+
+	if (teamscores)    // display frags if it's a teamgame match
+		Sbar_SortTeamFrags();
+	else
+		return;
+
+	// draw the text
+	l = scoreboardlines <= 4 ? scoreboardlines : 4;
+
+	x = 0;
+	y = 0; // woods to position vertical
+
+	if (cl.gametype == GAME_DEATHMATCH)
+	{
+
+		GL_SetCanvas(CANVAS_TOPRIGHT3);
+
+		if (scr_match_hud.value)   // woods for console var off and on
+		{
+			if (cl.minutes != 255)
+				Draw_Fill(11, 1, 32, 18, 0, 0.3);  // rectangle for missing team
+
+			for (i = 0; i < l; i++)
+			{
+				k = fragsort[i];
+
+				// JPG - check for teamscores
+				if (teamscores)
+				{
+					colors = cl.teamscores[k].colors;
+					f = cl.teamscores[k].frags;
+				}
+				else
+					return;
+
+				// draw background
+				if (teamscores)
+				{
+					top = (colors & 15) << 4;
+					bottom = (colors & 15) << 4;
+				}
+				else
+				{
+					top = colors & 0xf0;
+					bottom = (colors & 15) << 4;
+				}
+				top = Sbar_ColorForMap(top);
+				bottom = Sbar_ColorForMap(bottom);
+
+				Draw_Fill((((x + 1) * 8) + 3), y + 1, 32, 6, top, .6);
+				Draw_Fill((((x + 1) * 8) + 3), y + 7, 32, 3.5, bottom, .6);
+
+				// draw number
+				sprintf(num, "%3i", f);
+
+				Sbar_DrawCharacter(((x + 1) * 8) + 7, y - 23, num[0]);
+				Sbar_DrawCharacter(((x + 2) * 8) + 7, y - 23, num[1]);
+				Sbar_DrawCharacter(((x + 3) * 8) + 7, y - 23, num[2]);
+
+				x += 0;
+				y += 9;  // woods to position vertical
+			}
+
+		}
+	}
+	else
+		return;
+}
+
+/*
+=======================
+SCR_ShowObsFrags -- added by woods #observerhud
+=======================
+*/
+
+void SCR_ShowObsFrags(void)
+{
+
+	int	i, k, x, y, f;
+	char	num[12];
+	float	scale; //johnfitz
+	scoreboard_t* s;
+	char	shortname[16]; // woods for dynamic scoreboard during match, don't show ready
+
+
+	if ((!strcmp(cl.observer, "y") && (cl.modtype >= 2)) || scr_showscores.value)
+	{ 
+		GL_SetCanvas(CANVAS_BOTTOMLEFT);
+
+		scale = CLAMP(1.0, scr_sbarscale.value, (float)glwidth / 320.0); //johnfitz
+
+		//MAX_SCOREBOARDNAME = 32, so total width for this overlay plus sbar is 632, but we can cut off some i guess
+		if (glwidth / scale < 512 || scr_viewsize.value >= 120) //johnfitz -- test should consider scr_sbarscale
+			return;
+
+		// scores
+		Sbar_SortFrags_Obs ();
+
+		x = 7;
+		y = 150; //johnfitz -- start at the right place
+		for (i = 0; i < scoreboardlines; i++, y += -8) //johnfitz -- change y init, test, inc woods (reverse drawing order from bottom to top)
+		{
+			k = fragsort[i];
+			s = &cl.scores[k];
+			if (!s->name[0])
+				continue;
+
+			// colors
+			Draw_FillPlayer(x, y + 1, 40, 4, s->shirt, 1);
+			Draw_FillPlayer(x, y + 5, 40, 3, s->pants, 1);
+
+			// number
+			f = s->frags;
+			sprintf(num, "%3i", f);
+			Draw_Character(x + 8, y, num[0]);
+			Draw_Character(x + 16, y, num[1]);
+			Draw_Character(x + 24, y, num[2]);
+
+			// name
+			sprintf(shortname, "%.15s", s->name); // woods only show name, not 'ready' or 'afk' -- 15 characters
+			M_PrintWhite(x + 50, y, shortname);
+		}
+	}
+}
+
+/*
+=======================
+SCR_ShowFlagStatus -- added by woods #flagstatus
+Grab the impulse 70-80 CRCTF flag and print to top right screen. Abadondoned flags have reduced transparency.
+=======================
+*/
+void SCR_ShowFlagStatus(void)
+{
+	float z;
+	int x, y, xx, yy;
+	GL_SetCanvas(CANVAS_TOPRIGHT3);
+
+	z = 0.20; // abandoned not at base flag (alpha)
+	x = 0; xx = 0; 	y = 0; 	yy = 0; // initiate
+
+	if (!strcmp(cl.ffa, "y")) // change position in ffa mode below the clock
+	{  // xx and yy needed because drawalpha uses diff positioning
+		x = 26;
+		xx = 12;
+		y = -1;
+		yy = -25;
+
+	}
+
+	else // xx and yy needed because drawalpha uses diff positioning
+	{
+		x = 26;
+		xx = 12;
+		y = 19;
+		yy = -5;
+	}
+
+	if (scr_match_hud.value == 1)
+
+		if (cl.gametype == GAME_DEATHMATCH && cls.state == ca_connected)
+		{
+			if (!strcmp(cl.flagstatus, "r")) // red taken
+				Draw_Pic (x, y, Draw_PicFromWad ("sb_key2"));
+
+			if (!strcmp(cl.flagstatus, "x")) // red abandoned
+			{
+				glDisable (GL_ALPHA_TEST);
+				glTexEnvf (GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
+				Sbar_DrawPicAlpha (x, yy, Draw_PicFromWad2 ("sb_key2", TEXPREF_PAD | TEXPREF_NOPICMIP), z); // doesnt work
+			}
+
+			if (!strcmp(cl.flagstatus, "b")) // blue taken
+				Draw_Pic (x, y, Draw_PicFromWad ("sb_key1"));
+
+			if (!strcmp(cl.flagstatus, "y")) // blue abandoned
+			{
+				glDisable (GL_ALPHA_TEST);
+				glTexEnvf (GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
+				Sbar_DrawPicAlpha (x, yy, Draw_PicFromWad2 ("sb_key1", TEXPREF_PAD | TEXPREF_NOPICMIP), z);
+			}
+
+			if (!strcmp(cl.flagstatus, "p")) //  blue & red taken
+			{
+				Draw_Pic (x, y, Draw_PicFromWad ("sb_key1")); // blue
+				Draw_Pic (xx, y, Draw_PicFromWad ("sb_key2")); // red
+			}
+
+			if (!strcmp(cl.flagstatus, "z")) // blue & red abandoned
+			{
+				glDisable (GL_ALPHA_TEST);
+				glTexEnvf (GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
+				Sbar_DrawPicAlpha (xx, yy, Draw_PicFromWad2 ("sb_key2", TEXPREF_PAD | TEXPREF_NOPICMIP), z);
+				Sbar_DrawPicAlpha (x, yy, Draw_PicFromWad2 ("sb_key1", TEXPREF_PAD | TEXPREF_NOPICMIP), z);
+			}
+
+			if (!strcmp (cl.flagstatus, "j"))  // blue abandoned, red taken
+			{
+				Draw_Pic (xx, y, Draw_PicFromWad ("sb_key2")); // red
+
+				glDisable (GL_ALPHA_TEST);
+				glTexEnvf (GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
+				Sbar_DrawPicAlpha (x, yy, Draw_PicFromWad2 ("sb_key1", TEXPREF_PAD | TEXPREF_NOPICMIP), z);
+			}
+
+			if (!strcmp(cl.flagstatus, "k")) // red abandoned, blue taken
+			{
+				glDisable (GL_ALPHA_TEST);
+				glTexEnvf (GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
+				Sbar_DrawPicAlpha (xx, yy, Draw_PicFromWad2("sb_key2", TEXPREF_PAD | TEXPREF_NOPICMIP), z); // red
+
+				Draw_Pic (x, y, Draw_PicFromWad ("sb_key1")); // blue
+			}
+		}
+}
+
+/*
+==============
+SCR_DrawSpeed -- woods #speed
+==============
+*/
+void SCR_DrawSpeed (void)
+{
+	char			st[64];
+	int				x, y;
+
+	GL_SetCanvas (CANVAS_SBAR2);
+	x = 0;
+	y = 0;
+
+	if (scr_viewsize.value <= 100)
+		y = 18;
+	else if (scr_viewsize.value == 110)
+		y = 43;
+	if (scr_sbar.value == 2)
+		y = 43;
+	if (scr_showspeed.value && !cl.intermission) {
+		vec3_t	vel = { cl.velocity[0], cl.velocity[1], 0 };
+		float	speed = VectorLength(vel);
+
+		sprintf (st, "%-4.0f", speed);
+		if (scr_viewsize.value <= 110)
+		{ 
+			if (speed > 400 && !(speed > 600)) // red
+				M_Print (x, y, st);
+			else
+				if (speed > 600)
+					M_Print2 (x, y, st); // yellow/gold
+			else
+				M_PrintWhite (x, y, st);  // white
+		}
+	}
+}
+
+/*
+==============
+SCR_DrawMute -- woods #usermute
+==============
+*/
+void SCR_Mute(void)
+{
+	int				x, y;
+
+	GL_SetCanvas(CANVAS_SBAR2);
+
+	if (!strcmp(mute, "y"))
+	{
+	x = 288;
+	y = 0;
+
+	if (scr_viewsize.value <= 100)
+		y = 18;
+	else if (scr_viewsize.value == 110)
+		y = 43;
+	else
+		return;
+	if (scr_sbar.value == 2)
+		y = 43;
+	if (!cl.intermission)
+		M_PrintWhite(x, y, "mute");
+	}
+}
+
+/*
+==============
+SCR_Mute_Switch -- woods
+==============
+*/
+void SCR_Mute_Switch(void)
+{
+	if ((!strcmp(mute, "y")) != true)
+		strncpy(mute, "y", sizeof(mute));
+	else
+		strncpy(mute, "n", sizeof(mute));
 }
 
 /*
@@ -693,6 +1322,9 @@ SCR_DrawNet
 */
 void SCR_DrawNet (void)
 {
+	if (!scr_shownet.value)
+		return;
+	
 	if (realtime - cl.last_received_message < 0.3)
 		return;
 	if (cls.demoplayback)
@@ -728,6 +1360,24 @@ void SCR_DrawPause (void)
 
 /*
 ==============
+DrawPause2 -- woods #showpaused
+==============
+*/
+void SCR_DrawPause2(void)
+{
+	qpic_t* pic;
+
+	GL_SetCanvas(CANVAS_MENU2); //johnfitz
+
+	pic = Draw_CachePic("gfx/pause.lmp");
+	if (paused == 1)
+	Draw_Pic((320 - pic->width) / 2, (240 - 48 - pic->height) / 2, pic); //johnfitz -- stretched menus
+
+	scr_tileclear_updates = 0; //johnfitz
+}
+
+/*
+==============
 SCR_DrawLoading
 ==============
 */
@@ -738,7 +1388,7 @@ void SCR_DrawLoading (void)
 	if (!scr_drawloading)
 		return;
 
-	GL_SetCanvas (CANVAS_MENU); //johnfitz
+	GL_SetCanvas (CANVAS_MENU2); //johnfitz
 
 	pic = Draw_CachePic ("gfx/loading.lmp");
 	Draw_Pic ( (320 - pic->width)/2, (240 - 48 - pic->height)/2, pic); //johnfitz -- stretched menus
@@ -748,19 +1398,88 @@ void SCR_DrawLoading (void)
 
 /*
 ==============
-SCR_DrawCrosshair -- johnfitz
+SCR_DrawCrosshair -- johnfitz -- woods major change #crosshair
 ==============
 */
 void SCR_DrawCrosshair (void)
 {
-	if (!crosshair.value)
+	int x,hue;
+
+	hue = 0;
+
+	/*if (sb_showscores == true && (cl.gametype == GAME_DEATHMATCH && cls.state == ca_connected)) // woods don't overlap crosshair with scoreboard
 		return;
 
+	if (!crosshair.value || (!strcmp(cl.observer, "y")))
+		return;*/
+
+	if (cl.time <= cl.faceanimtime && cl_damagehue.value == 2)
+		hue = 1;
+
 	GL_SetCanvas (CANVAS_CROSSHAIR);
-	Draw_Character (-4, -4, '+'); //0,0 is center of viewport
+
+	x = 0;
+
+	if (scr_crosshaircolor.value == 0)
+	{ 
+		if (hue)
+			x = 234; // orange
+		else
+			x = 254;
+	}
+	if (scr_crosshaircolor.value == 1)
+	{
+		if (hue)
+			x = 234; // orange
+		else
+			x = 192;
+	}
+	if (scr_crosshaircolor.value == 2)
+	{
+		if (hue)
+			x = 254; // white
+		else
+			x = 251;
+	}
+	if (scr_crosshaircolor.value == 3)
+	{ 
+		if (hue)
+			x = 254; // white
+		else
+			x = 208;
+	}
+	if (crosshair.value == 1)
+		Draw_Fill(-2, 1, 3, 3, x, 1); // simple dot
+	if (crosshair.value == 2)
+	{ 
+		Draw_Fill(-1, 7, 1, 8, x, 1);//  SOUTH
+		Draw_Fill(4, 2, 8, 1, x, 1); //  WEST
+		Draw_Fill(-5, 2, -8, 1, x, 1); // EAST
+		Draw_Fill(-1, -2, 1, -8, x, 1); // NORTH
+	}
+	if (crosshair.value == 3)
+	{
+		Draw_Fill(-1, -6, 1, 17, x, 1); // vertical
+		Draw_Fill(-9, 2, 17, 1, x, 1); //  horizontal
+	}
+	if (crosshair.value == 4)
+	{
+		Draw_Fill(-2, -6, 3, 17, x, 1); // vertical (thicker)
+		Draw_Fill(-9, 1, 17, 3, x, 1); //  horizontal (thicker)
+	}
+	if (crosshair.value == 5)
+	{
+		Draw_Fill(-3, 0, 5, 5, 0, 1); // simple dot (black bg)
+		Draw_Fill(-2, 1, 3, 3, x, 1); // simple dot
+	}
+	if (crosshair.value == 6)
+	{
+		Draw_Fill(-3, -7, 5, 19, 0, 1); // vertical (black bg)
+		Draw_Fill(-10, 0, 19, 5, 0, 1); //  horizontal (black bg)
+		Draw_Fill(-2, -6, 3, 17, x, 1); // vertical (thicker)
+		Draw_Fill(-9, 1, 17, 3, x, 1); //  horizontal (thicker)
+	}
 }
-
-
 
 //=============================================================================
 
@@ -773,8 +1492,9 @@ SCR_SetUpToDrawConsole
 void SCR_SetUpToDrawConsole (void)
 {
 	//johnfitz -- let's hack away the problem of slow console when host_timescale is <0
-	extern cvar_t host_timescale;
-	float timescale;
+	extern float frame_timescale; // woods #demorewind (Baker Fitzquake Mark V)
+	//extern cvar_t host_timescale;
+	//float timescale;
 	//johnfitz
 
 	Con_CheckResize ();
@@ -791,23 +1511,31 @@ void SCR_SetUpToDrawConsole (void)
 		scr_con_current = scr_conlines;
 	}
 	else if (key_dest == key_console)
-		scr_conlines = glheight/2; //half screen //johnfitz -- glheight instead of vid.height
+	{
+		scr_conlines = glheight * scr_consize.value; //johnfitz -- glheight instead of vid.height // woods #consize (joequake)
+		if (scr_conlines < 50)
+			scr_conlines = 50;
+		if (scr_conlines > glheight - 50)
+			scr_conlines = glheight - 50;
+	}
 	else
 		scr_conlines = 0; //none visible
 
-	timescale = (host_timescale.value > 0) ? host_timescale.value : 1; //johnfitz -- timescale
+	//timescale = (host_timescale.value > 0) ? host_timescale.value : 1; //johnfitz -- timescale
 
 	if (scr_conlines < scr_con_current)
 	{
 		// ericw -- (glheight/600.0) factor makes conspeed resolution independent, using 800x600 as a baseline
-		scr_con_current -= scr_conspeed.value*(glheight/600.0)*host_frametime/timescale; //johnfitz -- timescale
+		scr_con_current -= scr_conspeed.value * host_frametime / frame_timescale; //johnfitz -- timescale // woods #demorewind (Baker Fitzquake Mark V)
+	//	scr_con_current -= scr_conspeed.value*(glheight/600.0)*host_frametime/timescale; //johnfitz -- timescale
 		if (scr_conlines > scr_con_current)
 			scr_con_current = scr_conlines;
 	}
 	else if (scr_conlines > scr_con_current)
 	{
 		// ericw -- (glheight/600.0)
-		scr_con_current += scr_conspeed.value*(glheight/600.0)*host_frametime/timescale; //johnfitz -- timescale
+		scr_con_current += scr_conspeed.value * (glheight / 600.0) * host_frametime / frame_timescale; //johnfitz -- timescale // woods #demorewind (Baker Fitzquake Mark V)
+		//scr_con_current += scr_conspeed.value*(glheight/600.0)*host_frametime/timescale; //johnfitz -- timescale
 		if (scr_conlines < scr_con_current)
 			scr_con_current = scr_conlines;
 	}
@@ -864,11 +1592,14 @@ void SCR_ScreenShot_f (void)
 {
 	byte	*buffer;
 	char	ext[4];
-	char	imagename[16];  //johnfitz -- was [80]
+	char	imagename[28];  //johnfitz -- was [80] // woods #screenshots was 16
 	char	checkname[MAX_OSPATH];
 	int	i, quality;
 	qboolean	ok;
 
+	q_snprintf(checkname, sizeof(checkname), "%s/screenshots", com_gamedir); // woods #screenshots
+	Sys_mkdir(checkname); //  woods create screenshots if not there #screenshots
+	
 	Q_strncpy (ext, "png", sizeof(ext));
 
 	if (Cmd_Argc () >= 2)
@@ -899,7 +1630,7 @@ void SCR_ScreenShot_f (void)
 // find a file name to save it to
 	for (i=0; i<10000; i++)
 	{
-		q_snprintf (imagename, sizeof(imagename), "spasm%04i.%s", i, ext);	// "fitz%04i.tga"
+		q_snprintf (imagename, sizeof(imagename), "screenshots/qssm%04i.%s", i, ext);	// "fitz%04i.tga" // woods #screenshots
 		q_snprintf (checkname, sizeof(checkname), "%s/%s", com_gamedir, imagename);
 		if (Sys_FileTime(checkname) == -1)
 			break;	// file doesn't exist
@@ -931,7 +1662,10 @@ void SCR_ScreenShot_f (void)
 		ok = false;
 
 	if (ok)
+	{ 
 		Con_Printf ("Wrote %s\n", imagename);
+		S_LocalSound("player/tornoff2.wav"); // woods add sound to screenshot
+	}
 	else
 		Con_Printf ("SCR_ScreenShot_f: Couldn't create %s\n", imagename);
 
@@ -1248,10 +1982,19 @@ void SCR_UpdateScreen (void)
 		SCR_DrawNet ();
 		SCR_DrawTurtle ();
 		SCR_DrawPause ();
+		SCR_DrawPause2 (); // woods #showpaused
 		SCR_CheckDrawCenterString ();
 		SCR_DrawDevStats (); //johnfitz
 		SCR_DrawFPS (); //johnfitz
 		SCR_DrawClock (); //johnfitz
+		SCR_ShowPing (); // woods #scrping
+		SCR_ShowPL (); // woods #scrpl
+		SCR_DrawMatchClock (); // woods #matchhud
+		SCR_DrawMatchScores (); // woods #matchhud
+		SCR_ShowFlagStatus (); // woods #matchhud #flagstatus
+		SCR_ShowObsFrags (); // woods #observerhud
+		SCR_DrawSpeed (); // woods #speed
+		SCR_Mute (); // woods #usermute
 		SCR_DrawConsole ();
 		M_Draw ();
 	}

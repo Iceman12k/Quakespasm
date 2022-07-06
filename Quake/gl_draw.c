@@ -591,8 +591,8 @@ Draw_Character -- johnfitz -- modified to call Draw_CharacterQuad
 */
 void Draw_Character (int x, int y, int num)
 {
-	if (y <= -8)
-		return;			// totally off screen
+	/*if (y <= -8)
+		return;			// totally off screen*/ // woods alllow for negative drawing for #observerhud
 
 	num &= 255;
 
@@ -614,8 +614,8 @@ Draw_String -- johnfitz -- modified to call Draw_CharacterQuad
 */
 void Draw_String (int x, int y, const char *str)
 {
-	if (y <= -8)
-		return;			// totally off screen
+	//if (y <= -8) // woods enabled for more printing options #varmatchclock
+	//	return;			// totally off screen
 
 	GL_Bind (char_texture);
 	glBegin (GL_QUADS);
@@ -654,6 +654,42 @@ void Draw_Pic (int x, int y, qpic_t *pic)
 	glTexCoord2f (gl->sl, gl->th);
 	glVertex2f (x, y+pic->height);
 	glEnd ();
+}
+
+// woods #sbarstyles for qw hud
+
+void Draw_SubPic_QW (int x, int y, qpic_t *pic, int ofsx, int ofsy, int w, int h)
+{
+	glpic_t			*gl;
+	float nsl, ntl, nsh, nth;
+	float oldw, oldh;
+
+	if (scrap_dirty)
+		Scrap_Upload ();
+	gl = (glpic_t *)pic->data;
+	GL_Bind (gl->gltexture);
+
+    oldw = gl->sh - gl->sl;
+    oldh = gl->th - gl->tl;
+
+    nsl = gl->sl + (ofsx * oldw) / pic->width;
+    nsh = nsl + (w * oldw) / pic->width;
+
+    ntl = gl->tl + (ofsy * oldh) / pic->height;
+    nth = ntl + (h * oldh) / pic->height;
+
+    glBegin (GL_QUADS);
+
+    glTexCoord2f (nsl, ntl);
+    glVertex2f (x, y);
+    glTexCoord2f (nsh, ntl);
+    glVertex2f (x+w, y);
+    glTexCoord2f (nsh, nth);
+    glVertex2f (x+w, y+h);
+    glTexCoord2f (nsl, nth);
+    glVertex2f (x, y+h);
+
+    glEnd ();
 }
 
 void Draw_SubPic (float x, float y, float w, float h, qpic_t *pic, float s1, float t1, float s2, float t2)
@@ -908,6 +944,11 @@ void GL_SetCanvas (canvastype newcanvas)
 		glOrtho (0, glwidth, glheight, 0, -99999, 99999);
 		glViewport (glx, gly, glwidth, glheight);
 		break;
+	case CANVAS_SCOREBOARD: // woods for +showscores #scoreboard
+		s = (float)glwidth / vid.conwidth; //use console scale
+		glOrtho (0, glwidth / s, glheight / s, 0, -99999, 99999);
+		glViewport(glx, gly, glwidth, glheight);
+		break;
 	case CANVAS_CONSOLE:
 		lines = vid.conheight - (scr_con_current * vid.conheight / glheight);
 		glOrtho (0, vid.conwidth, vid.conheight + lines, lines, -99999, 99999);
@@ -920,6 +961,13 @@ void GL_SetCanvas (canvastype newcanvas)
 		glOrtho (0, 640, 200, 0, -99999, 99999);
 		glViewport (glx + (glwidth - 320*s) / 2, gly + (glheight - 200*s) / 2, 640*s, 200*s);
 		break;
+	case CANVAS_MENU2:
+		s = q_min((float)glwidth / 320.0, (float)glheight / 200.0);
+		s = CLAMP(1.0, scr_menuscale.value-1, s);
+		// ericw -- doubled width to 640 to accommodate long keybindings
+		glOrtho(0, 640, 200, 0, -99999, 99999);
+		glViewport(glx + (glwidth - 320 * s) / 2, gly + (glheight - 200 * s) / 2, 640 * s, 200 * s);
+		break;
 	case CANVAS_MENUQC:
 		s = q_min((float)glwidth / 320.0, (float)glheight / 200.0);
 		s = CLAMP (1.0, scr_menuscale.value, s);
@@ -931,28 +979,62 @@ void GL_SetCanvas (canvastype newcanvas)
 		glOrtho (0, glwidth/s, glheight/s, 0, -99999, 99999);
 		glViewport (glx, gly, glwidth, glheight);
 		break;
+	case CANVAS_MOD:       //  woods added for server join messages, flag status, etc #modprint
+		s = (float)glwidth / vid.conwidth; //use console scale
+		s = CLAMP (1, scr_conscale.value, s);
+		// ericw -- doubled width to 640 to accommodate long keybindings
+		glOrtho (0, 640, 400, 0, -99999, 99999);
+		glViewport (glx + (glwidth - 320*s) / 2, gly + (glheight - 525*s) / 1.25, 640*s, 400*s);
+		break;
+	case CANVAS_OBSERVER:    //  woods for #observer mode
+		s = (float)glwidth / vid.conwidth; //use console scale
+		s = CLAMP(1, scr_conscale.value, s);
+		// ericw -- doubled width to 640 to accommodate long keybindings
+		glOrtho (0, 640, 400, 0, -99999, 99999);
+		glViewport (glx + (glwidth - 320*s) / 2, gly + (glheight - 750*s) / (scr_conscale.value - 1) / 1.25, 640*s, 400*s);
+		break;
 	case CANVAS_SBAR:
 		s = CLAMP (1.0, scr_sbarscale.value, (float)glwidth / 320.0);
-		if (cl.gametype == GAME_DEATHMATCH)
+		/*if (cl.gametype == GAME_DEATHMATCH) // woods #sbarmiddle
 		{
 			glOrtho (0, glwidth / s, 48, 0, -99999, 99999);
 			glViewport (glx, gly, glwidth, 48*s);
 		}
-		else
+		else*/
 		{
 			glOrtho (0, 320, 48, 0, -99999, 99999);
 			glViewport (glx + (glwidth - 320*s) / 2, gly, 320*s, 48*s);
 		}
 		break;
+	case CANVAS_SBAR2: // woods #speed
+		s = CLAMP (1.0, scr_sbarscale.value, (float)glwidth / 320.0);
+		glOrtho (0, 320, 80, 0, -99999, 99999);
+		glViewport (glx + (glwidth - 320*s) / 2, gly, 320*s, 80*s);
+		break;
+	case CANVAS_IBAR_QW: //split for cleaner QW hud support // woods #sbarstyles
+        s = CLAMP (1.0, scr_sbarscale.value, (float)glwidth / 320.0);
+        glOrtho (0, 44, 188, 0, -99999, 99999);
+        glViewport (glwidth - 44*s, 48*s, 44*s, 188*s);
+        break;
 	case CANVAS_CROSSHAIR: //0,0 is center of viewport
 		s = CLAMP (1.0, scr_crosshairscale.value, 10.0);
 		glOrtho (scr_vrect.width/-2/s, scr_vrect.width/2/s, scr_vrect.height/2/s, scr_vrect.height/-2/s, -99999, 99999);
 		glViewport (scr_vrect.x, glheight - scr_vrect.y - scr_vrect.height, scr_vrect.width & ~1, scr_vrect.height & ~1);
 		break;
+	case CANVAS_MATCHCLOCK: //0,0 is center of viewport // woods #varmatchclock
+		s = CLAMP (1.0, scr_matchclockscale.value, 10.0);
+		glOrtho(scr_vrect.width / -2 / s, scr_vrect.width / 2 / s, scr_vrect.height / 2 / s, scr_vrect.height / -2 / s, -99999, 99999);
+		glViewport(scr_vrect.x, glheight - scr_vrect.y - scr_vrect.height, scr_vrect.width & ~1, scr_vrect.height & ~1);
+		break;
 	case CANVAS_BOTTOMLEFT: //used by devstats
 		s = (float)glwidth/vid.conwidth; //use console scale
 		glOrtho (0, 320, 200, 0, -99999, 99999);
 		glViewport (glx, gly, 320*s, 200*s);
+		break;
+	case CANVAS_BOTTOMLEFT2: //used by devstats    // woods #scrping
+		s = (float)glwidth/vid.conwidth; //use console scale
+		glOrtho (0, 320, 200, 0, -99999, 99999);
+		glViewport (glx, gly - 167*s, 320*s, 200*s);
 		break;
 	case CANVAS_BOTTOMRIGHT: //used by fps/clock
 		s = (float)glwidth/vid.conwidth; //use console scale
@@ -963,6 +1045,16 @@ void GL_SetCanvas (canvastype newcanvas)
 		s = 1;
 		glOrtho (0, 320, 200, 0, -99999, 99999);
 		glViewport (glx+glwidth-320*s, gly+glheight-200*s, 320*s, 200*s);
+		break;
+	case CANVAS_TOPRIGHT2: // woods for upper right match clock placement #matchhud
+		s = ((float)glwidth / vid.conwidth) * 2; //use console scale
+		glOrtho(0, 320, 200, 0, -99999, 99999);
+		glViewport(glx + glwidth - 320 * s, gly + glheight - 16 * s, 320 * s, 200 * s);
+		break;
+	case CANVAS_TOPRIGHT3: // woods for upper right match scores and colors placement #matchhud #flagstatus
+		s = ((float)glwidth / vid.conwidth) * 2; //use console scale
+		glOrtho(0, 320, 200, 0, -99999, 99999);
+		glViewport(glx + glwidth - 48 * s, (gly + glheight - 212 * s), 320 * s, 200 * s);
 		break;
 	default:
 		Sys_Error ("GL_SetCanvas: bad canvas type");

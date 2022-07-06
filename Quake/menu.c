@@ -118,6 +118,16 @@ void M_Print (int cx, int cy, const char *str)
 	}
 }
 
+void M_Print2 (int cx, int cy, const char* str) // woods #speed yellow/gold numbers
+{
+	while (*str)
+	{
+		M_DrawCharacter(cx, cy, (*str) -30);
+		str++;
+		cx += 8;
+	}
+}
+
 void M_PrintWhite (int cx, int cy, const char *str)
 {
 	while (*str)
@@ -887,11 +897,11 @@ void M_Net_Draw (void)
 
 	f = 32;
 
-	if (ipxAvailable)
+	/*if (ipxAvailable)   // woods this is not needed
 		p = Draw_CachePic ("gfx/netmen3.lmp");
 	else
 		p = Draw_CachePic ("gfx/dim_ipx.lmp");
-	M_DrawTransPic (72, f, p);
+	M_DrawTransPic (72, f, p);*/
 
 	f += 19;
 	if (ipv4Available || ipv6Available)
@@ -1947,6 +1957,9 @@ void M_Menu_Help_f (void)
 	m_entersound = true;
 	help_page = 0;
 	IN_UpdateGrabs();
+#if defined(_WIN32) || defined(PLATFORM_OSX) || defined(PLATFORM_MAC)
+	SDL_OpenURL("https://qssm.quakeone.com");
+#endif
 }
 
 

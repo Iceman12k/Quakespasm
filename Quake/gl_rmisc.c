@@ -226,6 +226,9 @@ void R_Init (void)
 	Cvar_SetCallback (&r_noshadow_list, R_Model_ExtraFlags_List_f);
 	//johnfitz
 
+	Cvar_RegisterVariable (&cl_damagehue);   // woods #damage
+	Cvar_RegisterVariable(&cl_autodemo);   // woods #autodemo
+
 	Cvar_RegisterVariable (&gl_zfix); // QuakeSpasm z-fighting fix
 	Cvar_RegisterVariable (&r_lavaalpha);
 	Cvar_RegisterVariable (&r_telealpha);
@@ -412,6 +415,9 @@ void R_NewMap (void)
 	Sky_NewMap (); //johnfitz -- skybox in worldspawn
 	Fog_NewMap (); //johnfitz -- global fog in worldspawn
 	R_ParseWorldspawn (); //ericw -- wateralpha, lavaalpha, telealpha, slimealpha in worldspawn
+	CShift_ParseWorldspawn (); //infin -- cshiftwater, cshiftslime, cshiftlava in worldspawn // woods tag
+
+	LOC_LoadLocations ();//ProQuake   rook / woods #pqteam
 
 	load_subdivide_size = gl_subdivide_size.value; //johnfitz -- is this the right place to set this?
 }

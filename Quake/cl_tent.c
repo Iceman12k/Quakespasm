@@ -23,9 +23,15 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "quakedef.h"
 
+qboolean Q1BSP_RecursiveHullCheck (hull_t* hull, int num, float p1f, float p2f, vec3_t p1, vec3_t p2, trace_t* trace); // woods added for truelightning #truelight
+
 int			num_temp_entities;
 entity_t	cl_temp_entities[MAX_TEMP_ENTITIES];
 beam_t		cl_beams[MAX_BEAMS];
+
+static	vec3_t	playerbeam_end; // woods #truelight
+vec3_t	NULLVEC = { 0,0,0 }; // woods for #truelight
+void vectoangles(vec3_t vec, vec3_t ang); // woods for #truelight
 
 static sfx_t			*cl_sfx_wizhit;
 static sfx_t			*cl_sfx_knighthit;
@@ -71,6 +77,9 @@ void CL_UpdateBeam (qmodel_t *m, const char *trailname, const char *impactname, 
 			PScript_RunParticleEffectTypeString(impact, normal, 1, impactname);
 	}
 #endif
+
+	if (ent == cl.viewentity)						// woods #truelight
+		VectorCopy (end, playerbeam_end);	// for cl_truelightning  #truelight
 
 // override any beam with the same entity
 	for (i=0, b=cl_beams ; i< MAX_BEAMS ; i++, b++)
@@ -253,7 +262,7 @@ void CL_ParseTEnt (void)
 			R_ParticleExplosion (pos);
 		dl = CL_AllocDlight (0);
 		VectorCopy (pos, dl->origin);
-		dl->radius = 350;
+		dl->radius = 0; // woods no explosion light
 		dl->die = cl.time + 0.5;
 		dl->decay = 300;
 		if (type == TENEH_EXPLOSION3)
@@ -578,6 +587,58 @@ void CL_UpdateTEnts (void)
 		if (b->entity == cl.viewentity && cl.entities)
 		{
 			VectorCopy (cl.entities[cl.viewentity].origin, b->start);
+
+			// begin woods for truelightning #truelight
+
+			if ((cl_truelightning.value) && (!cls.demoplayback))  // remove not demo recording
+			{
+				vec3_t	forward, v, org, ang;
+				float	f, delta;
+				trace_t	trace;
+
+				f = q_max(0, q_min(1, cl_truelightning.value));
+
+				VectorSubtract(playerbeam_end, cl.entities[cl.viewentity].origin, v);
+				v[2] -= 22;		// adjust for view height
+
+				vectoangles(v, ang);
+
+				// lerp pitch
+				ang[0] = -ang[0];
+				if (ang[0] < -180)
+					ang[0] += 360;
+				ang[0] += (cl.viewangles[0] - ang[0]) * f;
+
+				// lerp yaw
+				delta = cl.viewangles[1] - ang[1];
+				if (delta > 180)
+					delta -= 360;
+				if (delta < -180)
+					delta += 360;
+				ang[1] += delta * f;
+				ang[2] = 0;
+
+				AngleVectors(ang, forward, NULLVEC, NULLVEC);
+				VectorScale(forward, 600, forward);
+
+				VectorCopy(cl.entities[cl.viewentity].origin, org);
+
+				org[2] += 16;
+				//	org[2] += bound(0, 16, 16);
+				//	org[2] += bound(-7, 0, 4);
+
+				VectorAdd(org, forward, b->end);
+
+				memset(&trace, 0, sizeof(trace_t));
+
+				if (!Q1BSP_RecursiveHullCheck(cl.worldmodel->hulls, 0, 0, 1, org, b->end, &trace)) // woods use q1bsp
+				{
+					//Con_DPrintf (1,"CL_UpdateTEnts : SV_RecursiveHullCheck hit world model\n");
+					VectorCopy(trace.endpos, b->end);
+				}
+			}
+
+			// end woods for truelightning
 		}
 
 		if (!PScript_ParticleTrail(b->start, b->end, PScript_FindParticleType(b->trailname), host_frametime, b->entity, NULL, &b->trailstate))

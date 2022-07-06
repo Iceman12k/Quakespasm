@@ -53,6 +53,7 @@ extern	qboolean	scr_skipupdate;
 extern	cvar_t		scr_viewsize;
 
 extern	cvar_t		scr_sbaralpha; //johnfitz
+extern	cvar_t		scr_sbar; // woods #sbarstyles
 
 void SCR_UpdateWholeScreen (void);
 
@@ -60,13 +61,23 @@ void SCR_UpdateWholeScreen (void);
 typedef enum {
 	CANVAS_NONE,
 	CANVAS_DEFAULT,
+	CANVAS_SCOREBOARD, // woods #scoreboard
 	CANVAS_CONSOLE,
 	CANVAS_MENU,
+	CANVAS_MENU2,
 	CANVAS_SBAR,
+	CANVAS_SBAR2, // woods #speed
+	CANVAS_IBAR_QW, // woods #sbarstyles
 	CANVAS_CROSSHAIR,
+	CANVAS_MATCHCLOCK,
 	CANVAS_BOTTOMLEFT,
+	CANVAS_BOTTOMLEFT2, // woods #scrping
+	CANVAS_MOD, // woods #modprint
+	CANVAS_OBSERVER, // woods #observer
 	CANVAS_BOTTOMRIGHT,
 	CANVAS_TOPRIGHT,
+	CANVAS_TOPRIGHT2, // woods #matchhud
+	CANVAS_TOPRIGHT3, // woods #matchhud
 	CANVAS_CSQC,
 	CANVAS_MENUQC,
 	CANVAS_INVALID = -1
@@ -75,8 +86,11 @@ extern	cvar_t		scr_menuscale;
 extern	cvar_t		scr_sbarscale;
 extern	cvar_t		scr_conwidth;
 extern	cvar_t		scr_conscale;
+extern	cvar_t		scr_consize; // woods #consize (joequake)
 extern	cvar_t		scr_scale;
 extern	cvar_t		scr_crosshairscale;
+extern	cvar_t		scr_crosshaircolor; // woods #crosshair
+extern	cvar_t		scr_matchclockscale; // woods #varmatchclock
 //johnfitz
 
 extern int scr_tileclear_updates; //johnfitz

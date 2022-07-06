@@ -34,6 +34,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // normal keys should be passed as lowercased ascii
 
 #define	K_BACKSPACE		127
+#define	K_CAPSLOCK		171 // woods #capslock
 #define	K_UPARROW		128
 #define	K_DOWNARROW		129
 #define	K_LEFTARROW		130
@@ -158,6 +159,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define MAX_BINDMAPS	8
 
 #define	MAXCMDLINE	256
+#define	MAX_CHAT_SIZE	45 // woods limit chat to 45 server limit #chatlimit
 
 typedef enum {key_game, key_console, key_message, key_menu} keydest_t;
 

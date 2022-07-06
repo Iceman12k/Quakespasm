@@ -87,7 +87,7 @@ void Chase_UpdateForDrawing (void)
 	vec3_t	forward, up, right;
 	vec3_t	ideal, crosshair, temp;
 
-	AngleVectors (cl.viewangles, forward, right, up);
+	AngleVectors (cl.lerpangles, forward, right, up); // woods added lerpangles for #smoothcam
 
 	// calc ideal camera location before checking for walls
 	for (i=0 ; i<3 ; i++)

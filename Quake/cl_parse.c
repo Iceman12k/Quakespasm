@@ -25,6 +25,18 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "quakedef.h"
 #include "bgmusic.h"
+#include "arch_def.h" // woods for f_system
+#if defined(PLATFORM_OSX) || defined(PLATFORM_MAC) // woods for f_system
+#include <sys/sysctl.h>
+#include <stdio.h>
+#endif
+
+extern cvar_t scr_fov; // woods #f_config
+extern cvar_t host_maxfps; // woods #f_config
+extern cvar_t crosshair; // woods #f_config
+extern cvar_t r_particledesc; // woods #f_config
+extern cvar_t gl_picmip; // woods #f_config
+extern cvar_t scr_showfps; // woods #f_config
 
 const char *svc_strings[128] =
 {
@@ -1428,6 +1440,8 @@ static void CL_ParseServerInfo (void)
 	}
 	cl.scores = (scoreboard_t *) Hunk_AllocName (cl.maxclients*sizeof(*cl.scores), "scores");
 
+	cl.teamscores = Hunk_AllocName (14 * sizeof(*cl.teamscores), "teamscores"); // JPG - for teamscore status bar  rook / woods #pqteam
+
 // parse gametype
 	cl.gametype = MSG_ReadByte ();
 
@@ -1974,6 +1988,10 @@ static void CL_ParseClientdata (void)
 		CL_SetHudStat(STAT_NAILS, ammovals[1]);
 		CL_SetHudStat(STAT_ROCKETS, ammovals[2]);
 		CL_SetHudStat(STAT_CELLS, ammovals[3]);
+
+		// woods for death location for LOCs #pqteam
+		if (health <= 0)
+			memcpy (cl.death_location, cl.viewent.origin, sizeof(vec3_t));
 	}
 
 	//johnfitz -- lerping
@@ -2036,7 +2054,8 @@ static void CL_ParseStatic (int version) //johnfitz -- added a parameter
 	ent->trailstate = NULL;
 	ent->emitstate = NULL;
 	ent->model = cl.model_precache[ent->baseline.modelindex];
-	ent->lerpflags |= LERP_RESETANIM; //johnfitz -- lerping
+	ent->lerpflags |= LERP_RESETANIM | LERP_RESETMOVE; //johnfitz -- lerping  Baker: Added LERP_RESETMOVE to list // woods #demorewind (Baker Fitzquake Mark V)
+	//ent->lerpflags |= LERP_RESETANIM; //johnfitz -- lerping
 	ent->frame = ent->baseline.frame;
 
 	ent->skinnum = ent->baseline.skin;
@@ -2219,6 +2238,271 @@ static void CL_ParseParticles(int type)
 }
 #endif
 
+/* 
+=======================
+CL_ParseProQuakeMessage -- // begin rook / woods #pqteam JPG - added this function for ProQuake messages
+=======================
+*/
+// JPG - added this
+int MSG_ReadBytePQ(void)
+{
+	return MSG_ReadByte() * 16 + MSG_ReadByte() - 272;
+}
+
+// JPG - added this
+int MSG_ReadShortPQ(void)
+{
+	return (MSG_ReadBytePQ() * 256 + MSG_ReadBytePQ());
+}
+
+int MSG_PeekByte(void)// JPG - need this to check for ProQuake messages
+{
+	if (msg_readcount + 1 > net_message.cursize)
+	{
+		msg_badread = true;
+		return -1;
+	}
+
+	return (unsigned char)net_message.data[msg_readcount];
+}
+
+void CL_ParseProQuakeMessage(void)
+{
+	int cmd, i;
+	int team, shirt, frags;// , ping;
+
+	MSG_ReadByte();//advance after the 'peek' MOD_PROQUAKE(0x01) byte
+
+	cmd = MSG_ReadByte();
+
+	switch (cmd)
+	{
+	case pqc_new_team:
+		Sbar_Changed();
+		team = MSG_ReadByte() - 16;
+		if (team < 0 || team > 15)
+			Host_Error("CL_ParseProQuakeMessage: pqc_new_team invalid team");
+		shirt = MSG_ReadByte() - 16;
+		cl.teamgame = true;
+		cl.teamscores[team].colors = 16 * shirt + team;
+		cl.teamscores[team].frags = 0;
+		//Con_Printf("pqc_new_team %d %d\n", team, shirt);
+		break;
+
+	case pqc_erase_team:
+		Sbar_Changed();
+		team = MSG_ReadByte() - 16;
+		if (team < 0 || team > 15)
+			Host_Error("CL_ParseProQuakeMessage: pqc_erase_team invalid team");
+		cl.teamscores[team].colors = 0;
+		cl.teamscores[team].frags = 0;		// JPG 3.20 - added this
+		//Con_Printf("pqc_erase_team %d\n", team);
+		break;
+
+	case pqc_team_frags:
+		Sbar_Changed();
+		cl.teamgame = true;
+		team = MSG_ReadByte() - 16;
+		if (team < 0 || team > 15)
+			Host_Error("CL_ParseProQuakeMessage: pqc_team_frags invalid team");
+		frags = MSG_ReadShortPQ();
+		if (frags & 32768)
+			frags = (frags - 65536);
+		cl.teamscores[team].frags = frags;
+		//Con_DPrintf (1,"pqc_team_frags %d %d\n", team, frags);
+		break;
+
+	case pqc_match_time:
+		Sbar_Changed();
+		cl.teamgame = true;
+		cl.minutes = MSG_ReadBytePQ();
+		cl.seconds = MSG_ReadBytePQ();
+		cl.last_match_time = cl.time;//todo: fix for demo-rewind
+		//Con_Printf("pqc_match_time %d %d\n", cl.minutes, cl.seconds);
+		break;
+
+	case pqc_match_reset:
+		Sbar_Changed();
+		cl.teamgame = true;
+		for (i = 0; i < 14; i++)
+		{
+			cl.teamscores[i].colors = 0;
+			cl.teamscores[i].frags = 0;		// JPG 3.20 - added this
+		}
+		//Con_Printf("pqc_match_reset\n");
+		break;
+	}
+}
+
+/* 
+=======================
+CL_ParseProQuakeString -- // begin rook / woods #pqteam
+=======================
+*/
+void CL_ParseProQuakeString(char* string) // #pqteam
+{
+	static int checkping = -1;
+	int i;
+	int a, b, c; // woods #iplog
+	const char* s;//R00k
+	// JPG 1.05 - for ip logging woods #iplog
+	static int remove_status = 0;
+	static int begin_status = 0;
+	static int playercount = 0;
+	static int checkip = -1;	// player whose IP address we're expecting
+	// JPG 3.02 - made this more robust.. try to eliminate screwups due to "unconnected" and '\n'
+	s = string;
+	char	checkname[MAX_OSPATH]; // woods for checkname #modcfg and end.cfg
+
+	// check for match time
+	if (!strncmp(string, "Match ends in ", 14))
+	{
+		s = string + 14;
+
+		if ((*s != 'T') && strchr(s, 'm'))
+		{
+			sscanf(s, "%d", &cl.minutes);
+			cl.seconds = 0;
+			cl.last_match_time = cl.time;
+		}
+	}
+	else
+	{	
+		if (!strcmp(string, "Match paused\n"))
+			//TODO:R00k add a pause for demo if recording...
+			cl.match_pause_time = cl.time;
+		else
+		{
+			if (!strcmp(string, "Match unpaused\n"))
+			{
+				cl.last_match_time += (cl.time - cl.match_pause_time);
+				cl.match_pause_time = 0;
+			}
+			else
+			{
+				if (!strcmp(string, "The match is over\n"))
+				{
+					cl.minutes = 255;					
+					if ((cl_autodemo.value == 2) && (cls.demorecording)) // woods #autodemo
+						Cmd_ExecuteString("stop\n", src_command);
+					
+					q_snprintf(checkname, sizeof(checkname), "%s/end.cfg", com_gamedir); // woods for end config (say gg, change color, etc)
+					if (Sys_FileTime(checkname) == -1)
+						return;	// file doesn't exist
+					else
+						Cbuf_AddText("exec end.cfg\n");
+				}
+
+				if ((cl_autodemo.value == 2) && ((!cls.demoplayback) && (!cls.demorecording))) // intiate autodemo 2 // woods #autodemo
+					if ((!strncmp(string, "The match has begun!", 20)) || (!strncmp(string, "minutes remaining", 17)))//crmod doesnt say "begun" so catch the 1st instance of minutes remain, makes the demos miss initial spawn though :(
+						Cmd_ExecuteString("record\n", src_command);
+
+				if (!strcmp(string, "Sending ClanRing CRCTF v3.5 bindings\n"))  // woods differemt cfgs per mod #modcfg
+				{
+					cl.modtype = 2; // woods #modtype [crctf server check]
+					q_snprintf(checkname, sizeof(checkname), "%s/ctf.cfg", com_gamedir); // woods for cfg particles per mod
+					if (Sys_FileTime(checkname) == -1)
+						return;	// file doesn't exist
+					else
+						Cbuf_AddText("exec ctf.cfg\n");
+				}
+				if (!strcmp(string, "ClanRing CRCTF v3.5\n"))  // woods #observerhud
+				{
+					strncpy(cl.observer, "n", sizeof(cl.observer)); // woods #observer set to no on join #observerhud
+				}
+				if ((strstr(string, "íáôãè ìåîçôè") || (strstr(string, "match length"))))  // woods vote match length auto vote yes
+				{
+					Cbuf_AddText("yes\n");
+				}
+				if (!strncmp(string, "ÃìáîÒéîç", 8)) // crmod wierd chars // woods differemt cfgs per mod #modcfg
+				{
+					cl.modtype = 3; // woods #modtype [crmod server check]
+					q_snprintf(checkname, sizeof(checkname), "%s/dm.cfg", com_gamedir);
+					if (Sys_FileTime(checkname) == -1)
+						return;	// file doesn't exist
+					else
+						Cbuf_AddText("exec dm.cfg\n");
+					strncpy(cl.observer, "n", sizeof(cl.observer)); // woods #observer set to no on join
+				}
+				if ((!strcmp(string, "classic mode\n")) || (!strcmp(string, "FFA mode\n")))  // woods #matchhud
+					strncpy(cl.ffa, "y", sizeof(cl.ffa));
+				else
+				{
+					{
+						
+						{
+							if (checkping < 0)
+							{
+								s = string;
+								i = 0;
+								while (*s >= '0' && *s <= '9')
+									i = 10 * i + *s++ - '0';
+								if (!strcmp(s, " minutes remaining\n"))
+								{
+									cl.minutes = i;
+									cl.seconds = 0;
+									cl.last_match_time = cl.time;
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// JPG 1.05 check for IP information  // woods for #iplog
+	if (iplog_size)
+	{
+		if (!strncmp(string, "host:    ", 9))
+		{
+			begin_status = 1;
+			if (!cl.console_status)
+				remove_status = 1;
+		}
+		if (begin_status && !strncmp(string, "players: ", 9))
+		{
+			begin_status = 0;
+			remove_status = 0;
+			if (sscanf(string + 9, "%d", &playercount))
+			{
+				if (!cl.console_status)
+					*string = 0;
+			}
+			else
+				playercount = 0;
+		}
+		else if (playercount && string[0] == '#')
+		{
+			if (!sscanf(string, "#%d", &checkip) || --checkip < 0 || checkip >= cl.maxclients)
+				checkip = -1;
+			if (!cl.console_status)
+				*string = 0;
+			remove_status = 0;
+		}
+		else if (checkip != -1)
+		{
+			if (sscanf(string, "   %d.%d.%d", &a, &b, &c) == 3)
+			{
+				cl.scores[checkip].addr = (a << 16) | (b << 8) | c;
+				IPLog_Add(cl.scores[checkip].addr, cl.scores[checkip].name);
+			}
+			checkip = -1;
+			if (!cl.console_status)
+				*string = 0;
+			remove_status = 0;
+
+			if (!--playercount)
+				cl.console_status = 0;
+		}
+		else
+		{
+			playercount = 0;
+			if (remove_status)
+				*string = 0;
+		}
+	}
+}
 
 #if 0	/* for debugging. from fteqw. */
 static void CL_DumpPacket (void)
@@ -2302,13 +2586,13 @@ static void CL_ParseStuffText(const char *msg)
 	for (; (str = strchr(cl.stuffcmdbuf, '\n')); memmove(cl.stuffcmdbuf, str, Q_strlen(str)+1))
 	{
 		qboolean handled = false;
-
+		/* woods comment this out #pqteam 
 		if (*cl.stuffcmdbuf == 0x01 && cl.protocol == PROTOCOL_NETQUAKE) //proquake message, just strip this and try again (doesn't necessarily have a trailing \n straight away)
 		{
 			for (str = cl.stuffcmdbuf+1; *str >= 0x01 && *str <= 0x1f; str++)
 				;//FIXME: parse properly
 			continue;
-		}
+		}*/
 
 		*str++ = 0;//skip past the \n
 
@@ -2388,7 +2672,7 @@ static qboolean CL_ParseSpecialPrints(const char *printtext)
 		cl.printtype = PRINT_NONE;
 	}
 
-	if (!strcmp(printtext, "Client ping times:\n") && cl.expectingpingtimes > realtime)
+if (!strcmp(printtext, "Client ping times:\n") && (cl.expectingpingtimes > realtime || cls.demoplayback))
 	{
 		cl.printtype = PRINT_PINGS;
 		cl.printplayer = 0;
@@ -2405,14 +2689,364 @@ static qboolean CL_ParseSpecialPrints(const char *printtext)
 		return true;
 	}*/
 
+	//woods #f_random
+	if (!cls.demoplayback && *printtext == 1 && e - printtext > 13 && (!strcmp(e - 11, ": f_random\n")))
+	{
+		if (realtime > cl.printrandom)
+		{
+			char coin[6];
+			char color[5];
+			char rps[10];
+			int v1 = rand() % 2; // head / tails
+			int v2 = rand() % 100 + 1; // 1-100
+			int v3 = rand() % 3 + 1; // rock, paper, scissors
+			int v4 = rand() % 2; // red or blue
+			int v5 = rand() % 21 + 1; // blackjack
+
+			if (v1 == 1)
+				sprintf(coin, "heads");
+			else
+				sprintf(coin, "tails");
+
+			if (v3 == 1)
+				sprintf(rps, "rock");
+			else if (v3 == 2)
+				sprintf(rps, "paper");
+			else
+				sprintf(rps, "scissors");
+
+			if (v4 == 1)
+				sprintf(color, "red");
+			else
+				sprintf(color, "blue");
+
+			MSG_WriteByte(&cls.message, clc_stringcmd);
+			MSG_WriteString(&cls.message, va("say %s, %s, %s, blackjack: %d, 1-100: %d", coin, rps, color, v5, v2));
+			cl.printrandom = realtime + 20;
+		}
+	}
+
+	//woods #f_config check for chat messages of the form 'name: f_config'
+	if (!cls.demoplayback && *printtext == 1 && e - printtext > 13 && (!strcmp(e - 11, ": f_config\n")))
+	{
+		if (realtime > cl.printconfig)
+		{
+			char key[2];
+			char particles[15];
+			char textures[4];
+			char hud[3];
+			char lfps[20];
+			
+			if (!strcmp(r_particledesc.string, ""))
+				sprintf(particles, "classic");
+			else
+				sprintf(particles, "%s", r_particledesc.string);
+
+			if (r_lightmap.value == 1 || gl_picmip.value >= 2)
+				sprintf(textures, "%s", "OFF");
+			else
+				sprintf(textures, "%s", "ON");
+
+			if (scr_sbar.value == 2)
+				sprintf(hud, "%s", "qw");
+			else
+				sprintf(hud, "%s", "nq");
+
+			// for movement key
+			int	i, count;
+			int bindmap = 0;
+
+			count = 0;
+			for (i = 0; i < MAX_KEYS; i++)
+			{
+				if (keybindings[bindmap][i] && *keybindings[bindmap][i])
+				{
+					if (!q_strcasecmp(keybindings[bindmap][i], "+forward"))
+					{
+							if (strlen(Key_KeynumToString(i)) == 1) // could be UPARROW?
+							{
+								sprintf(key, "%s", Key_KeynumToString(i));
+								break;
+							}
+					}
+					else
+					{ 
+						sprintf(key, "%s", "?");
+					}
+					count++;
+				}
+			}
+
+			// for fps
+			if (scr_showfps.value)
+			{ 
+				if (host_maxfps.value == 0)
+					sprintf(lfps, "fps (0) %d", cl.fps);
+				else
+					sprintf(lfps, "fps %d/%s", cl.fps, host_maxfps.string);
+			}
+			else
+				sprintf(lfps, "fpsmax %s", host_maxfps.string);
+			
+			MSG_WriteByte(&cls.message, clc_stringcmd);
+			MSG_WriteString(&cls.message, va("say fov %s, sens %s, tlighting %s, %s", scr_fov.string, sensitivity.string, cl_truelightning.string, lfps));
+			MSG_WriteByte(&cls.message, clc_stringcmd);
+			MSG_WriteString(&cls.message, va("say cross %s, vmodel %s, hud %s, particles %s", crosshair.string, r_drawviewmodel.string, hud, particles));
+			MSG_WriteByte(&cls.message, clc_stringcmd);
+			MSG_WriteString(&cls.message, va("say textures %s, +forward %s, chatmode %s", textures, key, cl_say.string));
+			cl.printconfig = realtime + 20;
+		}
+	}
+
+	const int bit = sizeof(void*) * 8; // woods add bit, adapted from ironwail
+	const char* platform = SDL_GetPlatform(); // woods #q_sysinfo (qrack)
+
 	//check for chat messages of the form 'name: q_version'
 	if (!cls.demoplayback && *printtext == 1 && e-printtext > 13 && (!strcmp(e-12, ": f_version\n") || !strcmp(e-12, ": q_version\n")))
 	{
 		if (realtime > cl.printversionresponse)
 		{
 			MSG_WriteByte (&cls.message, clc_stringcmd);
-			MSG_WriteString(&cls.message,va("say "ENGINE_NAME_AND_VER));
+			MSG_WriteString(&cls.message,va("say %s %s %d-bit", ENGINE_NAME_AND_VER, platform, bit)); // woods add bit, adapted from ironwail
 			cl.printversionresponse = realtime+20;
+		}
+	}
+
+	if (!cls.demoplayback && *printtext == 1 && e - printtext > 13 && (!strcmp(e - 12, ": q_sysinfo\n") || !strcmp(e - 11, ": f_system\n"))) // woods #q_sysinfo (qrack)
+	{
+		if (realtime > cl.printqsys)
+		{
+
+			const char* sound = SDL_GetAudioDeviceName(0, SDL_FALSE); // woods #q_sysinfo (qrack)
+			const int sdlRam = SDL_GetSystemRAM(); // woods #q_sysinfo (qrack)
+			const int num_cpus = SDL_GetCPUCount(); // woods #q_sysinfo (qrack)
+
+#if defined(_WIN32) // use windows registry to get some more detailed info that SDL2 can't, adapted from ezquake
+			char* SYSINFO_processor_description = NULL;
+			char* SYSINFO_windows_version = NULL;
+			int	 SYSINFO_MHz = 0;
+			HKEY hKey;
+
+			// find/set registry location
+			long ret = RegOpenKey(
+				HKEY_LOCAL_MACHINE,
+				"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
+				&hKey);
+
+			// get processor mhz
+
+			if (ret == ERROR_SUCCESS) {
+				DWORD type;
+				byte  data[1024];
+				DWORD datasize;
+
+				datasize = 1024;
+				ret = RegQueryValueEx(
+					hKey,
+					"~MHz",
+					NULL,
+					&type,
+					data,
+					&datasize);
+
+				if (ret == ERROR_SUCCESS && datasize > 0 && type == REG_DWORD)
+					SYSINFO_MHz = *((DWORD*)data);
+
+				// get processor name and description
+
+				datasize = 1024;
+				ret = RegQueryValueEx(
+					hKey,
+					"ProcessorNameString",
+					NULL,
+					&type,
+					data,
+					&datasize);
+
+				if (ret == ERROR_SUCCESS && datasize > 0 && type == REG_SZ)
+					SYSINFO_processor_description = strdup((char*)data);
+
+				// find/set registry location
+				long ret = RegOpenKey(
+					HKEY_LOCAL_MACHINE,
+					"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
+					&hKey);
+
+				// get windows version
+
+				datasize = 1024;
+				ret = RegQueryValueEx(
+					hKey,
+					"ProductName",
+					NULL,
+					&type,
+					data,
+					&datasize);
+
+				if (ret == ERROR_SUCCESS && datasize > 0 && type == REG_SZ)
+					SYSINFO_windows_version = strdup((char*)data);
+
+				RegCloseKey(hKey);
+			}
+
+			platform = SYSINFO_windows_version;
+	
+			MSG_WriteByte(&cls.message, clc_stringcmd);
+			MSG_WriteString(&cls.message, va("say %1.1fGHz %s", (float)SYSINFO_MHz/1000, SYSINFO_processor_description));
+#endif
+
+#if defined(PLATFORM_OSX) || defined(PLATFORM_MAC) // woods -- use mac terminal to get some more detailed info that SDL2 can't
+
+			char* SYSINFO_processor_description = NULL;
+			char* osversion_num = NULL;
+			char* os_codename = NULL;
+			char* com_modelname = NULL;
+
+			char buf[75];
+			char buf2[75];
+			char buf2a[75];
+			size_t buflen = 75;
+			size_t buflen2 = 75;
+			size_t buflen2a = 75;
+
+			// get prcoessor info: brand, name, ghz
+
+			if (sysctlbyname("machdep.cpu.brand_string", &buf, &buflen, NULL, 0) == -1)
+				SYSINFO_processor_description = "Could Not Find Processor Info";
+			else
+				SYSINFO_processor_description = buf;
+
+			// get os version: apple codename, release year, and number
+
+			if (sysctlbyname("kern.osproductversion", &buf2, &buflen2, NULL, 0) == -1)
+			{
+				osversion_num = "Unknown Version #";
+				os_codename = "Unknown OS Name";
+			}
+			else
+			{
+				osversion_num = buf2;
+
+				if (!strncmp(buf2, "12.", 3))
+					os_codename = "macOS Monterey (2021)";
+				else if (!strncmp(buf2, "11", 2))
+					os_codename = "macOS Big Sur (2020)";
+				else if (!strncmp(buf2, "10.15", 4))
+					os_codename = "macOS Catalina (2019)";
+				else if (!strncmp(buf2, "10.14", 4))
+					os_codename = "macOS Mojave (2018)";
+				else if (!strncmp(buf2, "10.13", 4))
+					os_codename = "macOS High Sierra (2017)";
+				else if (!strncmp(buf2, "10.12", 4))
+					os_codename = "macOS Sierra (2016)";
+				else if (!strncmp(buf2, "10.11", 4))
+					os_codename = "Mac OS X El Capitan (2015)";
+				else if (!strncmp(buf2, "10.10", 4))
+					os_codename = "Mac OS X Yosemite (2014)";
+				else if (!strncmp(buf2, "10.9", 3))
+					os_codename = "Mac OS X Mavericks (2013)";
+				else if (!strncmp(buf2, "10.8", 3))
+					os_codename = "Mac OS X Mountain Lion (2012)";
+				else if (!strncmp(buf2, "10.7", 3))
+					os_codename = "Mac OS X Lion (2011)";
+				else if (!strncmp(buf2, "10.6", 3))
+					os_codename = "Mac OS X Snow Leopard (2009)";
+				else if (!strncmp(buf2, "10.5", 3))
+					os_codename = "Mac OS X Leopard (2007)";
+				else
+					sprintf(osversion_num, "Mac OS %s", buf2);
+			}
+
+			platform = os_codename;
+
+			// get the specific model name and release year
+
+			if (sysctlbyname("hw.optional.arm64", &buf2a, &buflen2a, NULL, 0) == 0) // m1 mac, simplest case
+
+			{
+				FILE* fmodelname = popen("/usr/libexec/PlistBuddy -c 'print 0:product-name' /dev/stdin <<< \"$(/usr/sbin/ioreg -ar -d1 -k product-name)\"", "r");
+
+				char buf10[75];
+				while (fgets(buf10, sizeof(buf10), fmodelname) != 0)
+					pclose(fmodelname);
+
+				if (strstr(buf10, "Mac")) // did it find a clean mac name, if so set var
+					com_modelname = buf10;
+			}
+
+			else // if not a m1 mac, (About My Mac needs to have run ONCE by user to fill plist, or run it)
+
+			{
+
+				FILE* fmodelname = popen("/usr/libexec/PlistBuddy -c \"print :'CPU Names':$(system_profiler SPHardwareDataType | awk '/Serial/ {print $4}' | cut -c 9-)-en-US_US\" ~/Library/Preferences/com.apple.SystemProfiler.plist", "r");
+
+				char buf3[75];
+				while (fgets(buf3, sizeof(buf3), fmodelname) != 0)
+					pclose(fmodelname);
+
+				if (strstr(buf3, "Mac"))
+
+					com_modelname = buf3;
+
+				else // did it find a clean mac name, if so set var, else run About My Mac
+
+				{
+					FILE* fmodelname1 = popen("/usr/bin/open '/System/Library/CoreServices/Applications/About This Mac.app'; /bin/sleep 2", "r");
+
+					char buf4[75];
+					while (fgets(buf4, sizeof(buf4), fmodelname1) != 0)
+						pclose(fmodelname1);
+
+					FILE* fmodelname2 = popen("/usr/bin/pkill -ail 'System Information'; /bin/sleep 2", "r");
+
+					char buf5[75];
+					while (fgets(buf5, sizeof(buf5), fmodelname2) != 0)
+						pclose(fmodelname2);
+
+					FILE* fmodelname3 = popen("/usr/bin/killall cfprefsd; /bin/sleep 2", "r");
+
+					char buf6[75];
+					while (fgets(buf6, sizeof(buf6), fmodelname3) != 0)
+						pclose(fmodelname3);
+
+					FILE* fmodelname = popen("/usr/libexec/PlistBuddy -c \"print :'CPU Names':$(system_profiler SPHardwareDataType | awk '/Serial/ {print $4}' | cut -c 9-)-en-US_US\" ~/Library/Preferences/com.apple.SystemProfiler.plist", "r");
+
+					char buf3[75];
+					while (fgets(buf3, sizeof(buf3), fmodelname) != 0)
+						pclose(fmodelname);
+
+					if (strstr(buf3, "Mac"))
+						com_modelname = buf3;
+
+					else // did it find a clean mac name, if so set var, else give generic simple name
+					{
+						char buf7[75];
+
+						if (sysctlbyname("hw.model", &buf7, &buflen, NULL, 0) == -1)
+							com_modelname = "Cannot Find Mac Model Name"; // final fall back
+						else
+							com_modelname = buf7; // second to last fall back
+					}
+				}
+			}
+
+			com_modelname = strtok(com_modelname, "\n");
+
+			MSG_WriteByte(&cls.message, clc_stringcmd);
+			MSG_WriteString(&cls.message, va("say %s", com_modelname));
+			MSG_WriteByte(&cls.message, clc_stringcmd);
+			MSG_WriteString(&cls.message, va("say %s", SYSINFO_processor_description));
+#endif
+			MSG_WriteByte(&cls.message, clc_stringcmd);
+			MSG_WriteString(&cls.message, va("say %s, %d l-cores, %dgb ram", platform, num_cpus, sdlRam / 1000));
+			MSG_WriteByte(&cls.message, clc_stringcmd);
+			MSG_WriteString(&cls.message, va("say Video: %s", videoc));
+			MSG_WriteByte(&cls.message, clc_stringcmd);
+			MSG_WriteString(&cls.message, va("say %s", videosetg));
+			MSG_WriteByte(&cls.message, clc_stringcmd);
+			MSG_WriteString(&cls.message, va("say Audio: %s", sound));
+		
+			cl.printqsys = realtime + 20;
 		}
 	}
 
@@ -2490,7 +3124,7 @@ void CL_ParseServerMessage (void)
 	int			i;
 	const char		*str; //johnfitz
 	int			lastcmd; //johnfitz
-
+	char*		s;	// woods #pqteam
 //
 // if recording demos, copy the message out
 //
@@ -2581,7 +3215,9 @@ void CL_ParseServerMessage (void)
 			Host_EndGame ("Server disconnected\n");
 
 		case svc_print:
-			CL_ParsePrint(MSG_ReadString());
+			s = MSG_ReadString();           //   woods pq string #pqteam
+			CL_ParseProQuakeString(s);      //   woods pq string #pqteam
+			CL_ParsePrint(s);				//   woods pq string #pqteam
 			break;
 
 		case svc_centerprint:
@@ -2591,6 +3227,11 @@ void CL_ParseServerMessage (void)
 			break;
 
 		case svc_stufftext:
+			// JPG - check for ProQuake message // woods #pqteam
+			if (MSG_PeekByte() == 0x01)
+				CL_ParseProQuakeMessage();
+			// Still want to add text, even on ProQuake messages.  This guarantees compatibility;
+			// unrecognized messages will essentially be ignored but there will be no parse errors
 			CL_ParseStuffText(MSG_ReadString());
 			break;
 
@@ -2606,6 +3247,23 @@ void CL_ParseServerMessage (void)
 		case svc_setangle:
 			for (i=0 ; i<3 ; i++)
 				cl.viewangles[i] = MSG_ReadAngle (cl.protocolflags);
+
+			if (!cls.demoplayback) // woods #smoothcam
+			{
+				VectorCopy (cl.mviewangles[0], cl.mviewangles[1]);
+
+				// JPG - hack with last_angle_time to autodetect continuous svc_setangles   // woods #smoothcam
+				if (last_angle_time > host_time - 0.3)
+					last_angle_time = host_time + 0.3;
+				else if (last_angle_time > host_time - 0.6)
+					last_angle_time = host_time;
+				else
+					last_angle_time = host_time - 0.3;
+
+				for (i = 0; i < 3; i++)
+					cl.mviewangles[0][i] = cl.viewangles[i];
+			}
+
 			break;
 		case svcfte_setangledelta:
 			for (i=0 ; i<3 ; i++)
@@ -2704,11 +3362,17 @@ void CL_ParseServerMessage (void)
 			break;
 
 		case svc_killedmonster:
+			if (cls.demoplayback && cls.demorewind) // woods #demorewind (Baker Fitzquake Mark V)
+				cl.stats[STAT_MONSTERS]--;
+			else
 			cl.stats[STAT_MONSTERS]++;
 			cl.statsf[STAT_MONSTERS] = cl.stats[STAT_MONSTERS];
 			break;
 
 		case svc_foundsecret:
+			if (cls.demoplayback && cls.demorewind)  // woods #demorewind (Baker Fitzquake Mark V)
+				cl.stats[STAT_SECRETS]--;
+			else
 			cl.stats[STAT_SECRETS]++;
 			cl.statsf[STAT_SECRETS] = cl.stats[STAT_SECRETS];
 			break;
@@ -2732,6 +3396,9 @@ void CL_ParseServerMessage (void)
 			break;
 
 		case svc_intermission:
+			if (cls.demoplayback && cls.demorewind) // woods #demorewind (Baker Fitzquake Mark V)
+				cl.intermission = 0;
+			else
 			cl.intermission = 1;
 			cl.completed_time = cl.time;
 			vid.recalc_refdef = true;	// go to full screen
@@ -2739,6 +3406,9 @@ void CL_ParseServerMessage (void)
 			break;
 
 		case svc_finale:
+			if (cls.demoplayback && cls.demorewind) // woods #demorewind (Baker Fitzquake Mark V)
+				cl.intermission = 0;
+			else
 			cl.intermission = 2;
 			cl.completed_time = cl.time;
 			vid.recalc_refdef = true;	// go to full screen
@@ -2749,6 +3419,9 @@ void CL_ParseServerMessage (void)
 			break;
 
 		case svc_cutscene:
+			if (cls.demoplayback && cls.demorewind) // woods #demorewind (Baker Fitzquake Mark V)
+				cl.intermission = 0;
+			else
 			cl.intermission = 3;
 			cl.completed_time = cl.time;
 			vid.recalc_refdef = true;	// go to full screen

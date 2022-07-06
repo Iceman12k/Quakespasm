@@ -30,7 +30,7 @@ const int	gl_alpha_format = 4;
 static cvar_t	gl_texturemode = {"gl_texturemode", "", CVAR_ARCHIVE};
 static cvar_t	gl_texture_anisotropy = {"gl_texture_anisotropy", "1", CVAR_ARCHIVE};
 static cvar_t	gl_max_size = {"gl_max_size", "0", CVAR_NONE};
-static cvar_t	gl_picmip = {"gl_picmip", "0", CVAR_NONE};
+cvar_t	gl_picmip = {"gl_picmip", "0", CVAR_NONE}; // woods remove static for #f_config
 static GLint	gl_hardware_maxsize;
 
 static int numgltextures;
@@ -1620,7 +1620,7 @@ void TexMgr_ReloadImage (gltexture_t *glt, plcolour_t shirt, plcolour_t pants)
 		data = (byte *) glt->source_offset; //image in memory
 	}
 	if (!data) {
-invalid:	Con_Printf ("TexMgr_ReloadImage: invalid source for %s\n", glt->name);
+invalid:	/*Con_Printf("TexMgr_ReloadImage: invalid source for %s\n", glt->name);*/ // woods disable 
 		Hunk_FreeToLowMark(mark);
 		return;
 	}
@@ -1638,9 +1638,9 @@ invalid:	Con_Printf ("TexMgr_ReloadImage: invalid source for %s\n", glt->name);
 		{
 			glt->shirt = shirt;
 			glt->pants = pants;
-		}
+		}/*
 		else
-			Con_Printf ("TexMgr_ReloadImage: can't colormap a non SRC_INDEXED texture: %s\n", glt->name);
+			Con_Printf ("TexMgr_ReloadImage: can't colormap a non SRC_INDEXED texture: %s\n", glt->name);*/
 	}
 
 //

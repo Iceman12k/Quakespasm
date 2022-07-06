@@ -25,6 +25,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "quakedef.h"
 #include "bgmusic.h"
 #include <setjmp.h>
+#include "time.h" // woods #cfgbackup
 
 /*
 
@@ -42,6 +43,8 @@ quakeparms_t *host_parms;
 qboolean	host_initialized;		// true if into command execution
 
 double		host_frametime;
+double		host_time;              // woods #smoothcam
+double		last_angle_time;		// JPG - for smooth chasecam (from Proquake)   // woods #smoothcam
 double		realtime;				// without any filtering or bounding
 double		oldrealtime;			// last frame run
 
@@ -280,6 +283,42 @@ void Host_Callback_Notify (cvar_t *var)
 		SV_BroadcastPrintf ("\"%s\" changed to \"%s\"\n", var->name, var->string);
 }
 
+char dequake[256];	// JPG 1.05 // woods for #iplog to work
+
+/*
+=======================
+Host_InitDeQuake // woods for #iplog to work
+======================
+*/
+void Host_InitDeQuake (void)
+{
+	int i;
+
+	for (i = 1; i < 12; i++)
+		dequake[i] = '#';
+	dequake[9] = 9;
+	dequake[10] = 10;
+	dequake[13] = 13;
+	dequake[12] = ' ';
+	dequake[1] = dequake[5] = dequake[14] = dequake[15] = dequake[28] = '.';
+	dequake[16] = '[';
+	dequake[17] = ']';
+	for (i = 0; i < 10; i++)
+		dequake[18 + i] = '0' + i;
+	dequake[29] = '<';
+	dequake[30] = '-';
+	dequake[31] = '>';
+	for (i = 32; i < 128; i++)
+		dequake[i] = i;
+	for (i = 0; i < 128; i++)
+		dequake[i + 128] = dequake[i];
+	dequake[128] = '(';
+	dequake[129] = '=';
+	dequake[130] = ')';
+	dequake[131] = '*';
+	dequake[141] = '>';
+}
+
 /*
 =======================
 Host_InitLocal
@@ -329,6 +368,10 @@ void Host_InitLocal (void)
 	Cvar_RegisterVariable (&temp1);
 
 	Host_FindMaxClients ();
+
+	host_time = 1.0;		// so a think at time 0 won't get called // woods #smoothcam
+	last_angle_time = 0.0;  // JPG - smooth chasecam  // woods #smoothcam
+	Host_InitDeQuake ();	// JPG 1.05 - initialize dequake array // for #iplog woods
 }
 
 
@@ -368,6 +411,64 @@ void Host_WriteConfiguration (void)
 	}
 }
 
+/*
+===============
+Host_SaveConfiguration // woods #cfgsave
+===============
+*/
+void Host_SaveConfiguration(void)
+{
+	Host_WriteConfiguration();
+	Con_Printf("settings saved to config.cfg\n");
+}
+
+/*
+===============
+Host_BackupConfiguration // woods #cfgbackup
+===============
+*/
+void Host_BackupConfiguration(void)
+{
+	FILE* f;
+
+	char	name[MAX_OSPATH];
+	
+	char str[24];
+	time_t systime = time(0);
+	struct tm loct = *localtime(&systime);
+
+	q_snprintf(name, sizeof(name), "%s/id1", com_basedir); //  make an id1 folder if it doesnt exist already #smartafk
+	Sys_mkdir(name);
+
+	q_snprintf(name, sizeof(name), "%s/backups", com_gamedir); //  create backups folder if not there
+	Sys_mkdir(name);
+
+	strftime(str, 24, "config-%m-%d-%Y", &loct);
+
+	// dedicated servers initialize the host but don't parse and set the
+	// config.cfg cvars
+	if (host_initialized && !isDedicated && !host_parms->errstate)
+	{
+		f = fopen(va("%s/backups/%s.cfg", com_gamedir, str), "w");
+		if (!f)
+		{
+			Con_Printf("Couldn't write backup config.cfg.\n");
+			return;
+		}
+
+		//VID_SyncCvars (); //johnfitz -- write actual current mode to config file, in case cvars were messed with
+
+		Key_WriteBindings(f);
+		Cvar_WriteVariables(f);
+
+		//johnfitz -- extra commands to preserve state
+		fprintf(f, "vid_restart\n");
+		if (in_mlook.state & 1) fprintf(f, "+mlook\n");
+		//johnfitz
+
+		fclose(f);
+	}
+}
 
 /*
 =================
@@ -639,6 +740,9 @@ Host_FilterTime
 Returns false if the time is too short to run a frame
 ===================
 */
+
+float frame_timescale = 1.0f; // woods #demorewind (Baker Fitzquake Mark V)
+
 qboolean Host_FilterTime (float time)
 {
 	float maxfps; //johnfitz
@@ -646,17 +750,34 @@ qboolean Host_FilterTime (float time)
 	realtime += time;
 
 	//johnfitz -- max fps cvar
-	maxfps = CLAMP (10.0, host_maxfps.value, 1000.0);
+	maxfps = CLAMP (10.0, host_maxfps.value, 2307.0); // woods higher max
 	if (host_maxfps.value && !cls.timedemo && realtime - oldrealtime < 1.0/maxfps)
 		return false; // framerate is too high
 	//johnfitz
 
 	host_frametime = realtime - oldrealtime;
+
+	if (cls.demoplayback) // woods #demotools
+		host_frametime *= CLAMP(0, cl_demospeed.value, 20);
+
 	oldrealtime = realtime;
 
+	frame_timescale = 1; // woods #demorewind (Baker Fitzquake Mark V)
+	if (cls.demoplayback && cls.demospeed && !cls.timedemo && /*!cls.capturedemo &&*/ cls.demonum == -1)
+	{
+		host_frametime *= cls.demospeed;
+		frame_timescale = cls.demospeed;
+	}
+	else
+		if (host_timescale.value > 0 && !(cls.demoplayback && cls.demospeed && !cls.timedemo && /*!cls.capturedemo &&*/ cls.demonum == -1))
+		{
+			host_frametime *= host_timescale.value;
+			frame_timescale = host_timescale.value; // end woods #demorewind (Baker Fitzquake Mark V)
+		}
+
 	//johnfitz -- host_timescale is more intuitive than host_framerate
-	if (host_timescale.value > 0)
-		host_frametime *= host_timescale.value;
+	//if (host_timescale.value > 0)
+	//	host_frametime *= host_timescale.value;
 	//johnfitz
 	else if (host_framerate.value > 0)
 		host_frametime = host_framerate.value;
@@ -931,6 +1052,8 @@ void _Host_Frame (double time)
 		Cbuf_Waited();
 	}
 
+	host_time += host_frametime; // woods smoothcam  #smoothcam
+
 	if (cl.qcvm.progs)
 	{
 		PR_SwitchQCVM(&cl.qcvm);
@@ -1026,6 +1149,8 @@ Host_Init
 */
 void Host_Init (void)
 {
+	extern void LOC_PQ_Init (void);    // rook / woods #pqteam (added PQ to name)
+
 	if (standard_quake)
 		minimum_memory = MINIMUM_MEMORY;
 	else	minimum_memory = MINIMUM_MEMORY_LEVELPAK;
@@ -1057,6 +1182,9 @@ void Host_Init (void)
 	Mod_Init ();
 	NET_Init ();
 	SV_Init ();
+
+	LOC_PQ_Init (); // rook / woods #pqteam (added PQ to name)
+	IPLog_Init ();		// JPG 1.05 - ip address logging // woods #iplog
 
 #ifdef QSS_DATE	//avoid non-determinism.
 	Con_Printf ("Exe: " ENGINE_NAME_AND_VER "\n");
@@ -1118,6 +1246,9 @@ void Host_Init (void)
 	// johnfitz -- in case the vid mode was locked during vid_init, we can unlock it now.
 		// note: two leading newlines because the command buffer swallows one of them.
 		Cbuf_AddText ("\n\nvid_unlock\n");
+		Cbuf_AddText("toggleconsole\n"); // woods #ezsay add leading space for mode 2
+//		Cbuf_AddText("togglemenu\n"); // woods #ezsay add leading space for mode 2
+		Cbuf_AddText("namebk\n"); // woods #smartafk lets run a backup name check for AFK leftovers (crash/force quit)
 	}
 
 	if (cls.state == ca_dedicated)
@@ -1158,6 +1289,10 @@ void Host_Shutdown(void)
 	scr_disabled_for_loading = true;
 
 	Host_WriteConfiguration ();
+
+	Host_BackupConfiguration (); // woods #cfgbackup
+
+	IPLog_WriteLog ();	// JPG 1.05 - ip loggging  // woods #iplog
 
 	NET_Shutdown ();
 

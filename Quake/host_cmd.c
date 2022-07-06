@@ -22,6 +22,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
 #include "quakedef.h"
+#include "q_stdinc.h" // woods for #iplog
+#include "arch_def.h" // woods for #iplog
+#include "net_sys.h" // woods for #iplog
+#include "net_defs.h" // woods for #iplog
 #ifndef _WIN32
 #include <dirent.h>
 #endif
@@ -325,7 +329,7 @@ void DemoList_Init (void)
 		if (!search->pack) //directory
 		{
 #ifdef _WIN32
-			q_snprintf (filestring, sizeof(filestring), "%s/*.dem", search->filename);
+			q_snprintf (filestring, sizeof(filestring), "%s/demos/*.dem", search->filename); // woods #demosfolder
 			fhnd = FindFirstFile(filestring, &fdat);
 			if (fhnd == INVALID_HANDLE_VALUE)
 				continue;
@@ -336,7 +340,7 @@ void DemoList_Init (void)
 			} while (FindNextFile(fhnd, &fdat));
 			FindClose(fhnd);
 #else
-			q_snprintf (filestring, sizeof(filestring), "%s/", search->filename);
+			q_snprintf (filestring, sizeof(filestring), "%s/demos/", search->filename); // woods #demosfolder
 			dir_p = opendir(filestring);
 			if (dir_p == NULL)
 				continue;
@@ -434,6 +438,7 @@ static void Host_Status_f (void)
 	{
 		if (!sv.active)
 		{
+			cl.console_status = true;	// JPG 1.05 - added this; woods for #iplog
 			Cmd_ForwardToServer ();
 			return;
 		}
@@ -958,6 +963,8 @@ static void Host_Changelevel_f (void)
 	// also issue an error if spawn failed -- O.S.
 	if (!sv.active)
 		Host_Error ("cannot run map %s", level);
+	if ((cl_autodemo.value == 1) && (cls.demorecording)) // woods stops demo for #autodemo changelevel clientside
+		Cmd_ExecuteString("stop\n", src_command);     // woods stops demo for #autodemo changelevel clientside
 }
 
 /*
@@ -1012,12 +1019,19 @@ static void Host_Reconnect_Con_f (void)
 }
 static void Host_Reconnect_Sv_f (void)
 {
+	int ct;
 	if (cls.demoplayback)	// cross-map demo playback fix from Baker
 		return;
+
+	if ((cl_autodemo.value == 1) && (cls.demorecording))   // woods #autodemo
+		CL_Stop_f();
 
 	SCR_BeginLoadingPlaque ();
 	cl.protocol_dpdownload = false;
 	cls.signon = 0;		// need new connection messages
+
+	ct = cl.time - cl.maptime; // woods #servertime
+	mpservertime = mpservertime + ct; // woods #servertime
 }
 
 static void Host_Lightstyle_f (void)
@@ -1045,6 +1059,8 @@ static void Host_Connect_f (void)
 	q_strlcpy (name, Cmd_Argv(1), sizeof(name));
 	CL_EstablishConnection (name);
 	Host_Reconnect_Sv_f ();
+
+	mpservertime = 0; // woods #servertime
 }
 
 
@@ -1475,6 +1491,7 @@ Host_Name_f
 static void Host_Name_f (void)
 {
 	char	newName[32];
+	int a, b, c;	// JPG 1.05 - ip address logging  // woods for #iplog
 
 	if (Cmd_Argc () == 1)
 	{
@@ -1487,6 +1504,15 @@ static void Host_Name_f (void)
 		q_strlcpy(newName, Cmd_Args(), sizeof(newName));
 	newName[15] = 0;	// client_t structure actually says name[32].
 
+	// JPG 3.02 - remove bad characters // woods for #iplog
+	for (a = 0; newName[a]; a++)
+	{
+		if (newName[a] == 10)
+			newName[a] = ' ';
+		else if (newName[a] == 13)
+			newName[a] += 128;
+	}
+
 	if (cmd_source != src_client)
 	{
 		if (Q_strcmp(cl_name.string, newName) == 0)
@@ -1495,6 +1521,73 @@ static void Host_Name_f (void)
 	}
 	else
 		SV_UpdateInfo((host_client-svs.clients)+1, "name", newName);
+
+	// JPG 1.05 - log the IP address woods for #iplog  (log the IP address)
+	if (cls.state == ca_connected)
+		if (sscanf(net_activeSockets->maskedaddress, "%d.%d.%d", &a, &b, &c) == 3)
+			IPLog_Add((a << 16) | (b << 8) | c, newName);
+}
+
+/*
+===============
+Host_Name_Backup_f // woods #smartafk backup the name externally to a text file for possible crash event
+===============
+*/
+void Host_Name_Backup_f(void)
+{
+	FILE* f;
+
+	char	name[MAX_OSPATH];
+	char str[24];
+
+	q_snprintf(name, sizeof(name), "%s/id1/backups", com_basedir); //  create backups folder if not there
+	Sys_mkdir(name);
+
+	sprintf(str, "name");
+
+	// dedicated servers initialize the host but don't parse and set the
+	// config.cfg cvars
+	if (host_initialized && !isDedicated && !host_parms->errstate)
+	{
+		f = fopen(va("%s/id1/backups/%s.txt", com_basedir, str), "w");
+
+		if (!f)
+		{
+			Con_Printf("Couldn't write backup config.cfg.\n");
+			return;
+		}
+
+		fprintf(f, "%s", afk_name);
+	
+		fclose(f);
+	}
+}
+
+/*
+===============
+Host_Name_Load_Backup_f // woods #smartafk load that backup name if AFK in name at startup, and clear it
+===============
+*/
+void Host_Name_Load_Backup_f(void)
+{
+	char buffer[30];
+
+	FILE* f;
+
+		f = fopen(va("%s/id1/backups/name.txt", com_basedir), "r");
+
+		if (f == NULL) // lets not load backup
+		{
+			//Con_Printf("no AFK backup to restore from"); //no file means it was deleted normally
+			return;
+		}
+
+		while (fgets(buffer, sizeof(buffer), f) != NULL)
+		{
+			Cvar_Set("name", buffer);
+		}
+
+		fclose(f);
 }
 
 static void Host_Say(qboolean teamonly)
@@ -1533,7 +1626,12 @@ static void Host_Say(qboolean teamonly)
 	}
 // turn on color set 1
 	if (!fromServer)
-		q_snprintf (text, sizeof(text), "\001%s: %s", save->name, p);
+	{
+		if (teamplay.value && teamonly) // JPG - added () for mm2
+			q_snprintf(text, sizeof(text), "\001(%s): %s", save->name, p);
+		else
+			q_snprintf(text, sizeof(text), "\001%s: %s", save->name, p);
+	}
 	else
 		q_snprintf (text, sizeof(text), "\001<%s> %s", hostname.string, p);
 
@@ -1659,8 +1757,18 @@ static void Host_Color_f(void)
 
 	if (Cmd_Argc() == 1)
 	{
+		Con_Printf("\n");
 		Con_Printf ("\"%s\" is \"%s %s\"\n", Cmd_Argv(0), CL_PLColours_ToString(CL_PLColours_Parse(cl_topcolor.string)), CL_PLColours_ToString(CL_PLColours_Parse(cl_bottomcolor.string)));
 		Con_Printf ("color <0-13> [0-13]\n");
+		Con_Printf("\n");
+		Con_Printf("0 - white         7 - peach\n");
+		Con_Printf("1 - brown         8 - purple\n");
+		Con_Printf("2 - light blue    9 - magenta\n");
+		Con_Printf("3 - green        10 - tan\n");
+		Con_Printf("4 - red          11 - green\n");
+		Con_Printf("5 - orange       12 - yellow\n");
+		Con_Printf("6 - gold         13 - blue\n");
+		Con_Printf("\n");
 		return;
 	}
 
@@ -1719,8 +1827,8 @@ static void Host_Pause_f (void)
 //ericw -- demo pause support (inspired by MarkV)
 	if (cls.demoplayback)
 	{
-		cls.demopaused = !cls.demopaused;
-		cl.paused = cls.demopaused;
+		//cls.demopaused = !cls.demopaused; // woods, use spacebar
+		//cl.paused = cls.demopaused; // woods, use spacebar
 		return;
 	}
 
@@ -2458,7 +2566,7 @@ static void Host_Startdemos_f (void)
 		Con_Printf ("Max %i demos in demoloop\n", MAX_DEMOS);
 		c = MAX_DEMOS;
 	}
-	Con_Printf ("%i demo(s) in loop\n", c);
+	//Con_Printf ("%i demo(s) in loop\n", c); // woods don't print this
 
 	for (i = 1; i < c + 1; i++)
 		q_strlcpy (cls.demos[i-1], Cmd_Argv(i), sizeof(cls.demos[0]));
@@ -2513,6 +2621,124 @@ static void Host_Stopdemo_f (void)
 		return;
 	CL_StopPlayback ();
 	CL_Disconnect ();
+}
+
+/*
+==========================================================
+PROQUAKE FUNCTIONS (JPG 1.05)  -- added for #iplog woods
+==========================================================
+*/
+
+// used to translate to non-fun characters for identify <name>
+char unfun[129] =
+"................[]olzeasbt89...."
+"........[]......olzeasbt89..[.]."
+"aabcdefghijklmnopqrstuvwxyz[.].."
+".abcdefghijklmnopqrstuvwxyz[.]..";
+
+// try to find s1 inside of s2
+int unfun_match(char* s1, char* s2)
+{
+	int i;
+	for (; *s2; s2++)
+	{
+		for (i = 0; s1[i]; i++)
+		{
+			if (unfun[s1[i] & 127] != unfun[s2[i] & 127])
+				break;
+		}
+		if (!s1[i])
+			return true;
+	}
+	return false;
+}
+
+/* JPG 1.05
+==================
+Host_Identify_f
+
+Print all known names for the specified player's ip address
+==================
+*/
+
+void Host_Identify_f(void)
+{
+	int i;
+	int a, b, c;
+	char name[16];
+
+	if (!iplog_size)
+	{
+		Con_Printf("IP logging not available\nUse -iplog command line option\n");
+		return;
+	}
+
+	if (Cmd_Argc() < 2)
+	{
+		Con_Printf("usage: identify <player number or name>\n");
+		return;
+	}
+	if (sscanf(Cmd_Argv(1), "%d.%d.%d", &a, &b, &c) == 3)
+	{
+		Con_Printf("known aliases for %d.%d.%d:\n", a, b, c);
+		IPLog_Identify((a << 16) | (b << 8) | c);
+		return;
+	}
+
+	i = Q_atoi(Cmd_Argv(1)) - 1;
+	if (i == -1)
+	{
+		if (sv.active)
+		{
+			for (i = 0; i < svs.maxclients; i++)
+			{
+				if (svs.clients[i].active && unfun_match(Cmd_Argv(1), svs.clients[i].name))
+					break;
+			}
+		}
+		else
+		{
+			for (i = 0; i < cl.maxclients; i++)
+			{
+				if (unfun_match(Cmd_Argv(1), cl.scores[i].name))
+					break;
+			}
+		}
+	}
+	if (sv.active)
+	{
+		if (i < 0 || i >= svs.maxclients || !svs.clients[i].active)
+		{
+			Con_Printf("No such player\n");
+			return;
+		}
+		if (sscanf(svs.clients[i].netconnection->maskedaddress, "%d.%d.%d", &a, &b, &c) != 3)
+		{
+			Con_Printf("Could not determine IP information for %s\n", svs.clients[i].name);
+			return;
+		}
+		strncpy(name, svs.clients[i].name, 15);
+		name[15] = 0;
+		Con_Printf("known aliases for %s:\n", name);
+		IPLog_Identify((a << 16) | (b << 8) | c);
+	}
+	else
+	{
+		if (i < 0 || i >= cl.maxclients || !cl.scores[i].name[0])
+		{
+			Con_Printf("No such player\n");
+			return;
+		}
+		if (!cl.scores[i].addr)
+		{
+			Con_Printf("No IP information for %.15s\nUse 'status'\n", cl.scores[i].name);
+			return;
+		}
+		strncpy(name, cl.scores[i].name, 15);
+		name[15] = 0;
+		Con_Printf("known aliases for %s:\n", name);
+		IPLog_Identify(cl.scores[i].addr);
+	}
 }
 
 //=============================================================================
@@ -2845,6 +3071,7 @@ void Host_InitCommands (void)
 	Cmd_AddCommand_ServerCommand ("reconnect", Host_Reconnect_Sv_f);
 	Cmd_AddCommand_ServerCommand ("ls", Host_Lightstyle_f);
 	Cmd_AddCommand_ClientCommand ("name", Host_Name_f);
+	Cmd_AddCommand_ClientCommand ("namebk", Host_Name_Load_Backup_f); // woods #smartafk
 	Cmd_AddCommand_ClientCommandQC ("noclip", Host_Noclip_f);
 	Cmd_AddCommand_ClientCommandQC ("setpos", Host_SetPos_f); //QuakeSpasm
 
@@ -2875,6 +3102,10 @@ void Host_InitCommands (void)
 	Cmd_AddCommand ("viewframe", Host_Viewframe_f);
 	Cmd_AddCommand ("viewnext", Host_Viewnext_f);
 	Cmd_AddCommand ("viewprev", Host_Viewprev_f);
+
+	Cmd_AddCommand("identify", Host_Identify_f);	// JPG 1.05 - player IP logging // woods #iplog
+	Cmd_AddCommand("ipdump", IPLog_Dump);			// JPG 1.05 - player IP logging // woods #iplog
+	Cmd_AddCommand("ipmerge", IPLog_Import);		// JPG 3.00 - import an IP data file // woods #iplog
 
 	Cmd_AddCommand ("mcache", Mod_Print);
 }

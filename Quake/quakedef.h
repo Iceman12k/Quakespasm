@@ -52,7 +52,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 	// combined version string like "2020-10-20-beta1"
 	#define	ENGINE_NAME_AND_VER	"QSS " QS_STRINGIFY(QSS_DATE) QUAKESPASM_VER_SUFFIX
 #else
-	#define ENGINE_NAME_AND_VER "QSS" " " QUAKESPASM_VER_STRING
+	#define ENGINE_NAME_AND_VER "QSS-M (1.4.3)" " " QUAKESPASM_VER_STRING
 #endif
 
 //define	PARANOID			// speed sapping error checking
@@ -290,7 +290,8 @@ typedef struct
 #include "menu.h"
 #include "cdaudio.h"
 #include "glquake.h"
-
+#include "location.h"      // rook / woods #pqteam
+#include "iplog.h"		// JPG 1.05 - ip address logging // woods #iplog
 
 //=============================================================================
 
@@ -317,6 +318,8 @@ extern	byte		*host_colormap;
 extern	int		host_framecount;	// incremented every frame, never reset
 extern	double		realtime;		// not bounded in any way, changed at
 							// start of every frame, never reset
+
+extern	double		last_angle_time;	// JPG - need this for smooth chasecam (from Proquake)   // woods #smoothcam
 
 typedef struct filelist_item_s
 {
@@ -346,6 +349,9 @@ void Host_ClientCommands (const char *fmt, ...) FUNC_PRINTF(1,2);
 void Host_ShutdownServer (qboolean crash);
 void Host_WriteConfiguration (void);
 
+void Host_SaveConfiguration (void); // woods #cfgsave
+void Host_BackupConfiguration (void); // woods #cfgbackup
+
 void Host_AppendDownloadData(client_t *client, sizebuf_t *buf);
 void Host_DownloadAck(client_t *client);
 
@@ -356,6 +362,12 @@ void DemoList_Init (void);
 void ExtraMaps_NewGame (void);
 void DemoList_Rebuild (void);
 
+extern cvar_t	gl_lightning_alpha; // woods #lightalpha
+extern cvar_t	cl_damagehue;  // woods #damage
+extern	vec3_t	NULLVEC; // woods truelighting #truelight
+extern char dequake[256];	// JPG 1.05 - dedicated console translation // woods for #iplog
+extern	cvar_t	cl_autodemo; //r00k  / woods #autodemo
+
 extern int		current_skill;	// skill level for currently loaded level (in case
 					//  the user changes the cvar while the level is
 					//  running, this reflects the level actually in use)
@@ -363,6 +375,16 @@ extern int		current_skill;	// skill level for currently loaded level (in case
 extern qboolean		isDedicated;
 
 extern int		minimum_memory;
+
+int		scoreboardlines; // woods #scrping -- moved here for gl_screen.c and sbar.c
+int		fragsort[MAX_SCOREBOARD]; // woods #scrping -- moved here for gl_screen.c and sbar.c
+
+char		mute[2];			// woods for mute to memory #usermute
+qboolean	sb_showscores; // woods moved for broader access
+char		videoc[40];		// woods #q_sysinfo (qrack)
+char		videosetg[50];	// woods #q_sysinfo (qrack)
+char		afk_name[16]; // woods #smartafk
+double		mpservertime;	// woods #servertime
 
 #endif	/* QUAKEDEFS_H */
 

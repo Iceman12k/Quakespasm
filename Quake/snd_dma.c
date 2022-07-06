@@ -47,6 +47,7 @@ static void S_Update_ (void);
 static void GetSoundtime (void);
 void S_StopAllSounds (qboolean clear);
 static void S_StopAllSoundsC (void);
+void Sound_Toggle_Mute_f (void); // woods
 
 // =======================================================================
 // Internal sound data & structures
@@ -68,7 +69,7 @@ vec3_t		listener_right;
 vec3_t		listener_up;
 float		voicevolumescale = 1;	//for audio ducking while speaking
 
-#define	sound_nominal_clip_dist	1000.0
+#define	sound_nominal_clip_dist	1500.0 // JPG - changed this from 1000 to 15000 (I'm 99% sure that's what it was in 1.06) woods (put sound back to DOSquake levels!)
 
 int		soundtime;	// sample PAIRS
 int		paintedtime;	// sample PAIRS
@@ -248,6 +249,7 @@ void S_Init (void)
 	Cmd_AddCommand("soundlist", S_SoundList);
 	Cmd_AddCommand("soundinfo", S_SoundInfo_f);
 	Cmd_AddCommand("snd_restart", S_Restart_f);
+	Cmd_AddCommand("mute", Sound_Toggle_Mute_f); // woods #usermute
 
 	i = COM_CheckParm("-sndspeed");
 	if (i && i < com_argc-1)

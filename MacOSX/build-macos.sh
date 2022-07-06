@@ -2,7 +2,7 @@
 
 ./setup-vcpkg.sh
 
-xcodebuild -project QuakeSpasm.xcodeproj -target QuakeSpasm-Spiked-SDL2
+xcodebuild -project QuakeSpasm.xcodeproj -target QSS-M
 
 cat <<EOF > build/Release/Quakespasm-Spiked-Revision.txt
 Git URL:      $(git config --get remote.origin.url)
@@ -13,5 +13,5 @@ EOF
 
 # zip the files in `build/Release` to create the final archive for distribution
 cd build/Release
-rm Quakespasm-Spiked-macos.zip
-zip --symlinks --recurse-paths Quakespasm-Spiked-macos.zip *
+rm QSS-M_MacOS.zip
+zip --symlinks --recurse-paths QSS-M_MacOS.zip *

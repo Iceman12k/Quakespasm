@@ -5,7 +5,7 @@
 # "make SDL_CONFIG=/path/to/sdl-config" to override the locally included SDL versions.
 
 ### Enable/disable SDL2
-USE_SDL2=0
+USE_SDL2=1
 
 ### Enable/disable codecs for streaming music support
 USE_CODEC_WAVE=1
@@ -257,7 +257,9 @@ OBJS := strlcat.o \
 	cl_parse.o \
 	cl_tent.o \
 	console.o \
+	iplog.o \
 	keys.o \
+	location.o \
 	menu.o \
 	sbar.o \
 	view.o \

@@ -26,7 +26,7 @@ extern cvar_t r_drawflat;
 
 cvar_t r_oldwater = {"r_oldwater", "0", CVAR_ARCHIVE};
 cvar_t r_waterquality = {"r_waterquality", "8", CVAR_NONE};
-cvar_t r_waterwarp = {"r_waterwarp", "1", CVAR_NONE};
+cvar_t r_waterwarp = {"r_waterwarp", "1", CVAR_ARCHIVE};
 
 int gl_warpimagesize;
 float load_subdivide_size; //johnfitz -- remember what subdivide_size value was when this map was loaded
