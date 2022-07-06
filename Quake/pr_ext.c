@@ -6075,6 +6075,7 @@ static void PR_addentity_internal(edict_t *ed)	//adds a csqc entity into the sce
 			VectorCopy(ed->v.angles, e->angles);
 			e->model = model;
 			e->skinnum = ed->v.skin;
+			e->netstate.colormap = ed->v.colormap;
 			e->alpha = alpha?ENTALPHA_ENCODE(alpha->_float):ENTALPHA_DEFAULT;
 
 			//can't exactly use currentpose/previous pose, as we don't know them.
