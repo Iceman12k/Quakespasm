@@ -6069,14 +6069,20 @@ static void PR_addentity_internal(edict_t *ed)	//adds a csqc entity into the sce
 			eval_t *frame2time = GetEdictFieldValue(ed, qcvm->extfields.frame2time);
 			eval_t *alpha = GetEdictFieldValue(ed, qcvm->extfields.alpha);
 			eval_t *renderflags = GetEdictFieldValue(ed, qcvm->extfields.renderflags);
+			eval_t *entnum = GetEdictFieldValue(ed, qcvm->extfields.entnum);
 			int rf = renderflags?renderflags->_float:0;
 
 			VectorCopy(ed->v.origin, e->origin);
 			VectorCopy(ed->v.angles, e->angles);
 			e->model = model;
 			e->skinnum = ed->v.skin;
-			e->netstate.colormap = ed->v.colormap;
 			e->alpha = alpha?ENTALPHA_ENCODE(alpha->_float):ENTALPHA_DEFAULT;
+			e->netstate.alpha = e->alpha;
+			e->netstate.colormap = ed->v.colormap;
+
+			if (e->netstate.colormap > 0 && e->netstate.colormap <= cl.maxclients)
+				R_TranslateNewPlayerSkin(e->netstate.colormap - 1, e);
+
 
 			//can't exactly use currentpose/previous pose, as we don't know them.
 			e->lerpflags = LERP_EXPLICIT|LERP_RESETANIM|LERP_RESETMOVE;

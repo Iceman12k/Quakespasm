@@ -1512,7 +1512,7 @@ static void CL_UserinfoChanged(scoreboard_t *sb)
 	{
 		sb->shirt = top;
 		sb->pants = bot;
-		R_TranslateNewPlayerSkin (sb-cl.scores);
+		R_TranslateNewPlayerSkin (sb-cl.scores, NULL);
 	}
 }
 static void CL_ServerExtension_FullUserinfo_f(void)

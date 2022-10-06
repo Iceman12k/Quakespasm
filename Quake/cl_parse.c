@@ -604,7 +604,7 @@ static void CL_EntitiesDeltaed(void)
 		{
 			ent->skinnum = skin;
 			if (newnum > 0 && newnum <= cl.maxclients)
-				R_TranslateNewPlayerSkin (newnum - 1); //johnfitz -- was R_TranslatePlayerSkin
+				R_TranslateNewPlayerSkin (newnum - 1, NULL); //johnfitz -- was R_TranslatePlayerSkin
 		}
 		ent->effects = ent->netstate.effects;
 
@@ -644,7 +644,7 @@ static void CL_EntitiesDeltaed(void)
 			else
 				forcelink = true;	// hack to make null model players work
 			if (newnum > 0 && newnum <= cl.maxclients)
-				R_TranslateNewPlayerSkin (newnum - 1); //johnfitz -- was R_TranslatePlayerSkin
+				R_TranslateNewPlayerSkin (newnum - 1, NULL); //johnfitz -- was R_TranslatePlayerSkin
 
 			ent->lerpflags |= LERP_RESETANIM; //johnfitz -- don't lerp animation across model changes
 		}
@@ -1673,7 +1673,7 @@ static void CL_ParseUpdate (int bits)
 	{
 		ent->skinnum = skin;
 		if (num > 0 && num <= cl.maxclients)
-			R_TranslateNewPlayerSkin (num - 1); //johnfitz -- was R_TranslatePlayerSkin
+			R_TranslateNewPlayerSkin (num - 1, NULL); //johnfitz -- was R_TranslatePlayerSkin
 	}
 	if (bits & U_EFFECTS)
 		ent->effects = MSG_ReadByte();
@@ -1792,7 +1792,7 @@ static void CL_ParseUpdate (int bits)
 		else
 			forcelink = true;	// hack to make null model players work
 		if (num > 0 && num <= cl.maxclients)
-			R_TranslateNewPlayerSkin (num - 1); //johnfitz -- was R_TranslatePlayerSkin
+			R_TranslateNewPlayerSkin (num - 1, NULL); //johnfitz -- was R_TranslatePlayerSkin
 
 		ent->lerpflags |= LERP_RESETANIM; //johnfitz -- don't lerp animation across model changes
 	}

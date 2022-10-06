@@ -268,7 +268,7 @@ the skin or model actually changes, instead of just new colors
 added bug fix from bengt jardup
 ===============
 */
-void R_TranslateNewPlayerSkin (int playernum)
+void R_TranslateNewPlayerSkin (int playernum, entity_t *currententity)
 {
 	char		name[64];
 	byte		*pixels;
@@ -276,7 +276,8 @@ void R_TranslateNewPlayerSkin (int playernum)
 	int		skinnum;
 
 //get correct texture pixels
-	currententity = &cl.entities[1+playernum];
+	if (!currententity)
+		currententity = &cl.entities[1+playernum];
 
 	if (!currententity->model || currententity->model->type != mod_alias)
 		return;

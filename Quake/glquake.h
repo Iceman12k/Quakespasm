@@ -390,7 +390,7 @@ void CL_RunParticles (void);
 void R_ClearParticles (void);
 
 void R_TranslatePlayerSkin (int playernum);
-void R_TranslateNewPlayerSkin (int playernum); //johnfitz -- this handles cases when the actual texture changes
+void R_TranslateNewPlayerSkin (int playernum, entity_t *currententity); //johnfitz -- this handles cases when the actual texture changes
 void R_UpdateWarpTextures (void);
 
 void R_DrawWorld (void);

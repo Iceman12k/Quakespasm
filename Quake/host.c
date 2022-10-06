@@ -259,6 +259,7 @@ void	Host_FindMaxClients (void)
 		Cvar_SetQuick (&deathmatch, "0");
 }
 
+#define QSS_DATE 1 
 void Host_Version_f (void)
 {
 	Con_Printf ("Quake Version %1.2f\n", VERSION);

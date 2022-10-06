@@ -463,7 +463,7 @@ qmodel_t *Mod_LoadModel (qmodel_t *mod, qboolean crash)
 	if (cls.state == ca_connected)
 		for (i = 0; i < countof(playertextures); i++)
 			if (playertextures[i] && playertextures[i]->owner == mod)
-				R_TranslateNewPlayerSkin(i);
+				R_TranslateNewPlayerSkin(i, NULL);
 
 	return mod;
 }

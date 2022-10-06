@@ -1253,8 +1253,8 @@ void R_DrawAliasModel (entity_t *e)
 		} 
 		if (e->netstate.colormap && !gl_nocolors.value)
 		{
-			i = e - cl.entities;
-			if (i >= 1 && i<=cl.maxclients /* && !strcmp (currententity->model->name, "progs/player.mdl") */)
+			i = e->netstate.colormap;
+			if (i >= 1 && i <= cl.maxclients)
 				tx = playertextures[i - 1];
 		}
 		if (!gl_fullbrights.value)
